@@ -86,6 +86,26 @@ Put your keys in a `.env` file at the project root for `vercel dev` (already git
 burst of refreshes doesn't spend a burst of API calls. Free tiers are usually a few
 calls per minute; if you enable auto-refresh at 60s, that is most of your budget.
 
+## If the build fails on Vercel
+
+The real error is 5-15 lines above `Command "npm run build" exited with 1` in the
+build log. Two causes account for most of them, and both are already handled here:
+
+- **`vite: not found`** — happens when Vercel installs production dependencies
+  only. `vite` and `@vitejs/plugin-react` are in `dependencies` (not
+  `devDependencies`) in this package, so the build works either way.
+- **Node too old** — Vite 5 needs Node 18+. `engines.node` is set. If your project
+  is pinned lower, change it in Settings -> General -> Node.js Version.
+
+Other things worth checking:
+
+- `package.json` must sit at the **repository root**, not inside a subfolder. If it
+  is nested, set Root Directory in Vercel to that folder.
+- Filenames are case-sensitive on Vercel's Linux builders. `src/App.jsx` must be
+  capitalised exactly as the import in `src/main.jsx` writes it.
+- Delete `package-lock.json` and let Vercel regenerate it if you see `EUSAGE` or
+  lockfile-sync errors.
+
 ## Notes
 
 - No Tailwind, no UI library. All styling is a single CSS block inside `App.jsx`.
