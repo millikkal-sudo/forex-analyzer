@@ -344,6 +344,47 @@ function findSDZones(c, atr) {
   return kept.sort((a, b) => a.dist - b.dist).slice(0, 4);
 }
 
+/* ============================ FAIR VALUE GAPS ==============================
+   A three-candle imbalance: candle 1's wick and candle 3's wick do not overlap,
+   so the middle candle covered that range in one direction only. The untouched
+   band between them is the gap. Detected on wicks, because the gap is defined by
+   the range that was skipped, not by where candles closed. */
+function findFVGs(c, atr) {
+  const found = [];
+  for (let i = 2; i < c.length; i++) {
+    const a1 = c[i - 2], a2 = c[i - 1], a3 = c[i];
+    let z = null;
+    if (a3.l > a1.h) z = { lo: a1.h, hi: a3.l, kind: "bullish" };
+    else if (a1.l > a3.h) z = { lo: a3.h, hi: a1.l, kind: "bearish" };
+    if (!z) continue;
+    z.size = z.hi - z.lo;
+    if (z.size < atr * 0.22) continue;           // ignore specks below a fifth of an ATR
+    z.i = i; z.originI = i - 2;
+    z.impulse = Math.abs(a2.c - a2.o) / (atr || 1);
+    found.push(z);
+  }
+  const price = last(c).c;
+  for (const z of found) {
+    let minLow = Infinity, maxHigh = -Infinity;
+    for (let j = z.i + 1; j < c.length; j++) { if (c[j].l < minLow) minLow = c[j].l; if (c[j].h > maxHigh) maxHigh = c[j].h; }
+    if (z.kind === "bullish") {
+      z.filled = minLow <= z.lo;
+      z.fillPct = Number.isFinite(minLow) ? Math.max(0, Math.min(1, (z.hi - minLow) / z.size)) : 0;
+    } else {
+      z.filled = maxHigh >= z.hi;
+      z.fillPct = Number.isFinite(maxHigh) ? Math.max(0, Math.min(1, (maxHigh - z.lo) / z.size)) : 0;
+    }
+    z.state = z.filled ? "Filled" : z.fillPct > 0.02 ? "Partially filled" : "Unfilled";
+    z.atrSize = z.size / (atr || 1);
+    z.mid = (z.lo + z.hi) / 2;
+    z.dist = Math.abs(z.mid - price);
+    z.barsAgo = c.length - 1 - z.i;
+    z.inside = price >= z.lo && price <= z.hi;
+  }
+  const open = found.filter((z) => !z.filled).sort((a, b) => a.dist - b.dist).slice(0, 6);
+  return { zones: open, total: found.length, filled: found.filter((z) => z.filled).length };
+}
+
 /* ============================== LIQUIDITY ================================== */
 function findLiquidity(c, pivots, atr, tfMin) {
   const tol = atr * 0.28;
@@ -443,6 +484,7 @@ function analyzeSeries(c, tfMin) {
   const sr = buildSR(c, pivots, atr);
   const sd = findSDZones(c, atr);
   const liq = findLiquidity(c, pivots, atr, tfMin);
+  const fvg = findFVGs(c, atr);
   const patterns = findPatterns(c, atr);
 
   const e20 = last(ema[20].filter((v) => v != null));
@@ -482,7 +524,7 @@ function analyzeSeries(c, tfMin) {
   const strength = drift > 2.2 && maRead !== "Neutral" && structRead !== "Neutral" ? "Strong" : drift > 1 && maRead !== "Neutral" ? "Moderate" : "Weak";
 
   return { candles: c, price, ema, rsi, macd, atrArr, atr, atrPct, volatility, pivots, structure, structRead, events,
-    sr, sd, liq, patterns, maRead, maWhy, rsiVal, rsiPrev, rsiRead, rsiState, macdRead, macdWhy, momentumRead, srRead, srWhy, strength, tfMin };
+    sr, sd, liq, fvg, patterns, maRead, maWhy, rsiVal, rsiPrev, rsiRead, rsiState, macdRead, macdWhy, momentumRead, srRead, srWhy, strength, tfMin };
 }
 
 /* =============================== MTF LADDER ================================ */
@@ -507,12 +549,14 @@ function buildLadder(baseCandles, baseTf) {
 }
 
 /* ============================ CONFLUENCE LEDGER ============================ */
-function buildLedger(a, htf) {
+function buildLedger(a, htf, digits = 5) {
   const price = a.price;
   const nearSup = a.sr.sup[0], nearRes = a.sr.res[0];
   const near = (z) => z && price >= z.lo - a.atr * 0.4 && price <= z.hi + a.atr * 0.4;
   const e20 = last(a.ema[20].filter((v) => v != null)), e50 = last(a.ema[50].filter((v) => v != null));
   const sw = a.liq.sweep;
+  const bullFVG = a.fvg.zones.find((z) => z.kind === "bullish" && z.inside);
+  const bearFVG = a.fvg.zones.find((z) => z.kind === "bearish" && z.inside);
 
   const rows = [
     { key: "Market structure", max: 2,
@@ -528,8 +572,12 @@ function buildLedger(a, htf) {
       bear: a.macdRead === "Bearish" && nz(a.rsiVal, 50) < 50 ? 1 : 0,
       why: `MACD histogram reads ${a.macdRead.toLowerCase()}${a.rsiVal != null ? ` and RSI is ${a.rsiVal.toFixed(1)}` : ""}. The point is only awarded when both agree.` },
     { key: "Level reaction", max: 1,
-      bull: near(nearSup) ? 1 : 0, bear: near(nearRes) ? 1 : 0,
-      why: near(nearSup) ? `Price is working inside ${nearSup.name} support (${nearSup.touches} prior reaction${nearSup.touches === 1 ? "" : "s"}).` : near(nearRes) ? `Price is working inside ${nearRes.name} resistance (${nearRes.touches} prior reaction${nearRes.touches === 1 ? "" : "s"}).` : "Price is in open space between mapped zones, so no level is currently being tested." },
+      bull: near(nearSup) || bullFVG ? 1 : 0, bear: near(nearRes) || bearFVG ? 1 : 0,
+      why: near(nearSup) ? `Price is working inside ${nearSup.name} support (${nearSup.touches} prior reaction${nearSup.touches === 1 ? "" : "s"}).`
+        : bullFVG ? `Price is inside an unfilled bullish fair value gap at ${bullFVG.lo.toFixed(digits)}–${bullFVG.hi.toFixed(digits)}, ${bullFVG.barsAgo} bars old (${bullFVG.atrSize.toFixed(1)} ATR wide).`
+        : near(nearRes) ? `Price is working inside ${nearRes.name} resistance (${nearRes.touches} prior reaction${nearRes.touches === 1 ? "" : "s"}).`
+        : bearFVG ? `Price is inside an unfilled bearish fair value gap at ${bearFVG.lo.toFixed(digits)}–${bearFVG.hi.toFixed(digits)}, ${bearFVG.barsAgo} bars old (${bearFVG.atrSize.toFixed(1)} ATR wide).`
+        : "Price is in open space — no mapped zone and no open gap is currently being tested." },
     { key: "Liquidity confirmation", max: 1,
       bull: sw && sw.dir === "down" ? 1 : 0, bear: sw && sw.dir === "up" ? 1 : 0,
       why: sw ? `A recent bar traded ${sw.dir === "down" ? "below" : "above"} ${sw.level.kind.toLowerCase()} and closed back ${sw.dir === "down" ? "above" : "below"} it — resting orders were reached and price did not hold there. This is a sweep, not proof of reversal.` : "No sweep of a mapped liquidity level in the last 12 bars." },
@@ -559,6 +607,8 @@ function buildScenarios(a, led, htf, digits) {
   const supply = a.sd.find((z) => z.kind === "supply" && z.state !== "Broken");
   const eqH = a.liq.levels.find((l) => l.kind === "Equal highs");
   const eqL = a.liq.levels.find((l) => l.kind === "Equal lows");
+  const gapAbove = a.fvg.zones.filter((z) => z.mid > p && !z.inside).sort((x, y) => x.mid - y.mid)[0];
+  const gapBelow = a.fvg.zones.filter((z) => z.mid < p && !z.inside).sort((x, y) => y.mid - x.mid)[0];
 
   const bullish = {
     tone: "bull", title: "Scenario A — Bullish continuation",
@@ -575,7 +625,8 @@ function buildScenarios(a, led, htf, digits) {
     ],
     targets: [res[0] && { label: `${res[0].name} zone`, v: `${fmt(res[0].lo, digits)}–${fmt(res[0].hi, digits)}`, note: `${res[0].touches} prior reaction${res[0].touches === 1 ? "" : "s"}` },
       res[1] && { label: `${res[1].name} zone`, v: `${fmt(res[1].lo, digits)}–${fmt(res[1].hi, digits)}`, note: `${res[1].touches} prior reaction${res[1].touches === 1 ? "" : "s"}` },
-      eqH && { label: "Equal highs", v: fmt(eqH.price, digits), note: "resting buy-stops may sit just above" }].filter(Boolean),
+      eqH && { label: "Equal highs", v: fmt(eqH.price, digits), note: "resting buy-stops may sit just above" },
+      gapAbove && { label: `Unfilled ${gapAbove.kind} FVG`, v: `${fmt(gapAbove.lo, digits)}–${fmt(gapAbove.hi, digits)}`, note: `${gapAbove.atrSize.toFixed(1)} ATR wide, ${gapAbove.barsAgo} bars old` }].filter(Boolean),
     invalidation: lastHL ? `A candle closing below ${fmt(lastHL.price, digits)}. That breaks the higher-low sequence, which is the whole basis of this scenario.` : `A close below ${fmt(p - atr * 1.5, digits)} (1.5 ATR under current price) with no swing low left to defend.`,
   };
 
@@ -594,7 +645,8 @@ function buildScenarios(a, led, htf, digits) {
     ],
     targets: [sup[0] && { label: `${sup[0].name} zone`, v: `${fmt(sup[0].lo, digits)}–${fmt(sup[0].hi, digits)}`, note: `${sup[0].touches} prior reaction${sup[0].touches === 1 ? "" : "s"}` },
       sup[1] && { label: `${sup[1].name} zone`, v: `${fmt(sup[1].lo, digits)}–${fmt(sup[1].hi, digits)}`, note: `${sup[1].touches} prior reaction${sup[1].touches === 1 ? "" : "s"}` },
-      eqL && { label: "Equal lows", v: fmt(eqL.price, digits), note: "resting sell-stops may sit just below" }].filter(Boolean),
+      eqL && { label: "Equal lows", v: fmt(eqL.price, digits), note: "resting sell-stops may sit just below" },
+      gapBelow && { label: `Unfilled ${gapBelow.kind} FVG`, v: `${fmt(gapBelow.lo, digits)}–${fmt(gapBelow.hi, digits)}`, note: `${gapBelow.atrSize.toFixed(1)} ATR wide, ${gapBelow.barsAgo} bars old` }].filter(Boolean),
     invalidation: lastLH ? `A candle closing above ${fmt(lastLH.price, digits)}. That makes a higher high and removes the lower-high sequence this scenario depends on.` : `A close above ${fmt(p + atr * 1.5, digits)} (1.5 ATR above current price).`,
   };
 
@@ -902,6 +954,7 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
   let lo = Math.min(...c.map((k) => k.l)), hi = Math.max(...c.map((k) => k.h));
   const extra = [];
   if (layers.sr) a.sr.all.forEach((z) => extra.push(z.lo, z.hi));
+  if (layers.fvg) a.fvg.zones.forEach((z) => extra.push(z.lo, z.hi));
   if (layers.scenario) scenarioLines.forEach((l) => extra.push(l.price));
   extra.filter(Number.isFinite).forEach((v) => { if (v > lo - (hi - lo) * 0.5 && v < hi + (hi - lo) * 0.5) { lo = Math.min(lo, v); hi = Math.max(hi, v); } });
   const pad = (hi - lo) * 0.06 || 1;
@@ -930,6 +983,16 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
   return (
     <div ref={wrap} style={{ width: "100%" }}>
       <svg width={w} height={H} role="img" aria-label="Annotated price chart" style={{ display: "block" }}>
+        <defs>
+          <pattern id="fvgBull" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <rect width="7" height="7" fill="rgba(20,192,138,0.07)" />
+            <line x1="0" y1="0" x2="0" y2="7" stroke={T.bull} strokeWidth="1.6" opacity="0.5" />
+          </pattern>
+          <pattern id="fvgBear" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <rect width="7" height="7" fill="rgba(240,69,90,0.07)" />
+            <line x1="0" y1="0" x2="0" y2="7" stroke={T.bear} strokeWidth="1.6" opacity="0.5" />
+          </pattern>
+        </defs>
         <rect x="0" y="0" width={w} height={H} fill={T.panel} />
         {priceTicks.map((p, i) => (
           <g key={i}>
@@ -951,6 +1014,22 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
             fill={z.kind === "demand" ? "rgba(20,192,138,0.10)" : "rgba(240,69,90,0.10)"}
             stroke={(z.kind === "demand" ? T.bull : T.bear) + "44"} strokeDasharray="3 3" strokeWidth="1" />
         ))}
+
+        {layers.fvg && a.fvg.zones.map((z, i) => {
+          const x0 = Math.max(padL, X(idx(z.i)));
+          const yTop = Y(z.hi), hh = Math.max(2.5, Y(z.lo) - Y(z.hi));
+          return (
+            <g key={"f" + i}>
+              <rect x={x0} y={yTop} width={Math.max(6, w - padR - x0)} height={hh}
+                fill={z.kind === "bullish" ? "url(#fvgBull)" : "url(#fvgBear)"}
+                stroke={(z.kind === "bullish" ? T.bull : T.bear) + "66"} strokeWidth="1" />
+              <text x={x0 + 4} y={yTop + hh / 2 + 3} fill={z.kind === "bullish" ? T.bull : T.bear}
+                fontSize="8.5" fontWeight="700" fontFamily="IBM Plex Mono, monospace">
+                FVG{z.state === "Partially filled" ? " \u00bd" : ""}
+              </text>
+            </g>
+          );
+        })}
 
         {layers.liquidity && a.liq.levels.slice(0, 5).map((l, i) => (
           <g key={"l" + i}>
@@ -1028,7 +1107,7 @@ export default function ForexAnalyzer() {
   const [paste, setPaste] = useState("");
   const [imageNote, setImageNote] = useState(null);
   const [openWhy, setOpenWhy] = useState(null);
-  const [layers, setLayers] = useState({ ema: true, sr: true, sd: false, liquidity: false, structure: true, scenario: false });
+  const [layers, setLayers] = useState({ ema: true, sr: true, sd: false, liquidity: false, fvg: true, structure: true, scenario: false });
   const [checks, setChecks] = useState({});
   const [teach, setTeach] = useState(false);
   const [events, setEvents] = useState([]);
@@ -1054,7 +1133,7 @@ export default function ForexAnalyzer() {
   const a = useMemo(() => analyzeSeries(series, TF_MIN[tfMismatch ? nativeTf : tradeTf]), [series, tradeTf, nativeTf, tfMismatch]);
   const ladder = useMemo(() => buildLadder(raw, nativeTf), [raw, nativeTf]);
   const htf = ladder.find((l) => l.tf === htfTf);
-  const led = useMemo(() => (a ? buildLedger(a, htf) : null), [a, htf]);
+  const led = useMemo(() => (a ? buildLedger(a, htf, digits) : null), [a, htf, digits]);
   const scen = useMemo(() => (a && led ? buildScenarios(a, led, htf, digits) : null), [a, led, htf, digits]);
   const bias = a && led ? overallBias(led, a) : null;
   const status = led && scen ? currentStatus(led, scen) : null;
@@ -1349,7 +1428,7 @@ function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLay
 
       <Card title="Annotated chart" right={<span className="tag">last {Math.min(a.candles.length, 150)} bars</span>}>
         <div className="row" style={{ gap: 5, marginBottom: 10 }}>
-          {L("structure", "Structure")}{L("sr", "S/R zones")}{L("sd", "Supply/demand")}{L("liquidity", "Liquidity")}{L("ema", "EMAs")}{L("scenario", "Scenario levels")}
+          {L("structure", "Structure")}{L("sr", "S/R zones")}{L("fvg", "FVG")}{L("sd", "Supply/demand")}{L("liquidity", "Liquidity")}{L("ema", "EMAs")}{L("scenario", "Scenario levels")}
         </div>
         <ChartPanel a={a} digits={digits} layers={layers} scenarioLines={scenarioLines} />
         <p className="note mt">Labels are placed only where the data supports them: HH/HL/LH/LL come from confirmed swing pivots, BOS and CHOCH from candle closes through a prior swing, and zones from clustered pivot prices. Nothing is drawn by hand.</p>
@@ -1541,6 +1620,30 @@ function StructureTab({ a, digits, openWhy, setOpenWhy, ladder, htfTf, tradeTf }
           <p className="note mt">Liquidity zones are simply places where a lot of orders are likely to be resting — stops behind obvious swing points, entries at obvious levels. Price reaching them explains why moves sometimes overshoot. A sweep is not a reversal signal on its own, and describing it as "institutions hunting stops" is a story, not evidence.</p>
         </Card>
       </div>
+
+      <Card title="Fair value gaps" right={<span className="tag">{a.fvg.zones.length} open of {a.fvg.total} found</span>}>
+        {a.fvg.zones.length === 0 ? (
+          <p className="note">No unfilled gap wider than a fifth of an ATR in this series. {a.fvg.total > 0 ? `All ${a.fvg.total} that formed have since been traded back through.` : "Price has not moved with enough one-way urgency to leave one."}</p>
+        ) : (
+          <div className="ledger">
+            {a.fvg.zones.map((z, i) => (
+              <div className="led" key={i}>
+                <span className="dot" style={{ background: z.kind === "bullish" ? T.bull : T.bear }} />
+                <span>
+                  <b style={{ color: z.kind === "bullish" ? T.bull : T.bear, textTransform: "capitalize" }}>{z.kind} FVG</b>{" "}
+                  <span className="mono">{z.lo.toFixed(digits)} - {z.hi.toFixed(digits)}</span>{" "}
+                  <span className="tag">{z.state}</span>{z.inside && <span className="tag" style={{ color: T.warn, borderColor: T.warn + "66" }}>price inside</span>}
+                  <small>{z.atrSize.toFixed(1)} ATR wide, formed {z.barsAgo} bars ago{z.fillPct > 0.02 ? `, ${Math.round(z.fillPct * 100)}% traded back into` : ""}. The middle candle covered this range in one direction only, so no two-sided trading happened here.</small>
+                </span><span />
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt"><Why id="fvg" open={openWhy} setOpen={setOpenWhy}>
+          A fair value gap is found by comparing candle 1 and candle 3 of every three-bar sequence. If candle 1's high sits below candle 3's low, the market jumped that band without trading both ways through it, and that band is the gap. Detection uses wicks, not closes, because the gap is defined by the range that was skipped. Anything narrower than a fifth of an ATR is ignored, otherwise every ordinary bar produces one.
+        </Why></div>
+        <p className="note mt">The common claim is that gaps get filled. In this particular series {a.fvg.total > 0 ? `${a.fvg.filled} of ${a.fvg.total} did (${Math.round((a.fvg.filled / a.fvg.total) * 100)}%)` : "there is not enough of a sample to say"} - which is a useful number precisely because it is not 100%. An unfilled gap is a plausible area price may be drawn back to, not an appointment it has to keep.</p>
+      </Card>
 
       <Card title="Candlestick readings">
         {a.patterns.length === 0 && <p className="note">No recognisable pattern in the last eight candles. That is the normal state of a chart.</p>}
@@ -1943,6 +2046,7 @@ function LearnTab({ a, led, scen, bias, status, ladder, htf, digits, pairLabel, 
             ["BOS — break of structure", "A candle closing beyond the last swing in the direction the market was already moving. Continuation evidence."],
             ["CHOCH — change of character", "The first close through a swing in the opposite direction. An early warning that control may be shifting."],
             ["Supply / demand zone", "The small area price left in a hurry, suggesting orders were filled there in size."],
+            ["FVG - fair value gap", "A band of price the market jumped in one move, leaving no two-way trade inside it. Sometimes revisited, often not - treat it as a possible destination, never a scheduled one."],
             ["Liquidity", "Places where many orders are likely resting — usually just beyond an obvious high or low."],
             ["Sweep", "Price trading through such an area and closing back inside it."],
             ["ATR", "Average true range: the typical distance price covers in one bar. Use it to size stops."],
