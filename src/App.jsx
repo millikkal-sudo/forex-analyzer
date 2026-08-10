@@ -67,6 +67,13 @@ const CSS = `
 .nav button{padding:7px 12px;border-radius:6px;font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--dim);font-family:'IBM Plex Mono',monospace;white-space:nowrap}
 .nav button:hover{color:var(--text);background:var(--panel2)}
 .nav button[data-on="1"]{color:var(--ink);background:var(--text);font-weight:600}
+.sigbar{border-top:1px solid var(--line);background:rgba(14,19,28,.85)}
+.sigin{max-width:1320px;margin:0 auto;padding:8px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.sigact{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:7px;font-family:'IBM Plex Sans Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:.05em}
+.sigfld{display:flex;flex-direction:column;gap:1px;min-width:0}
+.sigfld b{font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;white-space:nowrap}
+.sigfld span{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+@media (max-width:640px){.sigin{padding:8px 12px;gap:10px}.sigact{font-size:12.5px;padding:4px 9px}}
 
 /* cards */
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
@@ -682,6 +689,58 @@ function currentStatus(led, sc) {
   return { text: "Waiting for confirmation", tone: "warn", icon: "🟡" };
 }
 
+/* ============================== VERDICT ENGINE =============================
+   Turns the ledger, the structural events and the mapped levels into one
+   directional read. It always ships with the price that triggers it and the
+   price that kills it, because a direction without those is not actionable. */
+function buildVerdict(a, led, scen, digits) {
+  const gap = led.bull - led.bear;
+  const ev = last(a.events);
+  const lastHL = [...a.pivots].reverse().find((x) => x.type === "L");
+  const lastLH = [...a.pivots].reverse().find((x) => x.type === "H");
+  const res = a.sr.res[0], sup = a.sr.sup[0];
+  const bullFVG = a.fvg.zones.find((z) => z.kind === "bullish" && z.inside);
+  const bearFVG = a.fvg.zones.find((z) => z.kind === "bearish" && z.inside);
+
+  let action, tone, side;
+  if (led.bull >= 5 && gap >= 2) { action = "POTENTIAL BUY"; tone = "bull"; side = "bull"; }
+  else if (led.bear >= 5 && gap <= -2) { action = "POTENTIAL SELL"; tone = "bear"; side = "bear"; }
+  else if (Math.max(led.bull, led.bear) >= 4 && Math.abs(gap) >= 1) { action = gap > 0 ? "WAIT — LEANING BUY" : "WAIT — LEANING SELL"; tone = "warn"; side = gap > 0 ? "bull" : "bear"; }
+  else { action = "NO SETUP"; tone = "flat"; side = null; }
+
+  const trigger = side === "bull"
+    ? (res ? `close above ${res.hi.toFixed(digits)}` : lastLH ? `close above ${lastLH.price.toFixed(digits)}` : "a close above the last swing high")
+    : side === "bear"
+      ? (sup ? `close below ${sup.lo.toFixed(digits)}` : lastHL ? `close below ${lastHL.price.toFixed(digits)}` : "a close below the last swing low")
+      : "no level worth watching yet";
+  const invalidation = side === "bull"
+    ? (lastHL ? lastHL.price.toFixed(digits) : (a.price - a.atr * 1.5).toFixed(digits))
+    : side === "bear"
+      ? (lastLH ? lastLH.price.toFixed(digits) : (a.price + a.atr * 1.5).toFixed(digits))
+      : null;
+
+  // the components actually carrying this read, strongest first
+  const carrying = led.rows.filter((r) => (side === "bull" ? r.bull : side === "bear" ? r.bear : 0) > 0)
+    .sort((x, y) => (side === "bull" ? y.bull - x.bull : y.bear - x.bear)).map((r) => r.key.toLowerCase());
+  const missing = led.rows.filter((r) => (side === "bull" ? r.bull : side === "bear" ? r.bear : 1) === 0).map((r) => r.key.toLowerCase());
+
+  const evText = ev ? `${ev.kind} ${ev.dir === "up" ? "upward" : "downward"} at ${ev.price.toFixed(digits)}, ${a.candles.length - 1 - ev.i} bars ago` : "no break of structure in this data";
+  const fvgText = bullFVG ? `price sitting in an unfilled bullish FVG (${bullFVG.lo.toFixed(digits)}–${bullFVG.hi.toFixed(digits)})`
+    : bearFVG ? `price sitting in an unfilled bearish FVG (${bearFVG.lo.toFixed(digits)}–${bearFVG.hi.toFixed(digits)})`
+    : a.fvg.zones.length ? `${a.fvg.zones.length} unfilled FVG${a.fvg.zones.length === 1 ? "" : "s"} left on the chart, none being tested` : "no unfilled FVG";
+
+  const reason = side
+    ? `Carried by ${carrying.slice(0, 3).join(", ")}. Last structural event: ${evText}. ${fvgText.charAt(0).toUpperCase() + fvgText.slice(1)}.`
+    : `Neither side clears the bar (bull ${led.bull}, bear ${led.bear}). Last structural event: ${evText}.`;
+
+  const blockers = [];
+  if (side && missing.length) blockers.push(`Not yet supporting it: ${missing.join(", ")}.`);
+  scen.noTrade.checks.slice(0, 2).forEach((c) => blockers.push(c.text));
+
+  return { action, tone, side, trigger, invalidation, reason, blockers, score: side === "bull" ? led.bull : side === "bear" ? led.bear : 0,
+    against: side === "bull" ? led.bear : side === "bear" ? led.bull : 0, ev, evText, fvgText };
+}
+
 /* =============================== RISK ENGINE =============================== */
 function riskCalc({ balance, riskPct, entry, stop, target, pairKey, atr }) {
   const inst = INSTRUMENTS[pairKey] || INSTRUMENTS["Custom pair"];
@@ -1138,6 +1197,7 @@ export default function ForexAnalyzer() {
   const bias = a && led ? overallBias(led, a) : null;
   const status = led && scen ? currentStatus(led, scen) : null;
   const quality = useMemo(() => (a ? assessQuality(a, ladder, source) : null), [a, ladder, source]);
+  const verdict = useMemo(() => (a && led && scen ? buildVerdict(a, led, scen, digits) : null), [a, led, scen, digits]);
 
   const scenarioLines = useMemo(() => {
     if (!a || !scen) return [];
@@ -1206,6 +1266,19 @@ export default function ForexAnalyzer() {
             ))}
           </nav>
         </div>
+        {verdict && (
+          <div className="sigbar">
+            <div className="sigin">
+              <span className="sigact" style={{ background: toneColor(verdict.tone), color: T.ink }}>{verdict.action}</span>
+              <span className="sigfld"><span>Confluence</span><b style={{ color: toneColor(verdict.tone) }}>{verdict.score} vs {verdict.against} of 8</b></span>
+              <span className="sigfld"><span>Trigger</span><b>{verdict.trigger}</b></span>
+              {verdict.invalidation && <span className="sigfld"><span>Invalidation</span><b style={{ color: T.warn }}>{verdict.invalidation}</b></span>}
+              <span className="sigfld"><span>Structure</span><b style={{ color: verdict.ev ? (verdict.ev.dir === "up" ? T.bull : T.bear) : T.dim }}>{verdict.ev ? `${verdict.ev.kind} ${verdict.ev.dir}` : "no BOS"}</b></span>
+              <span className="sigfld"><span>Open FVG</span><b style={{ color: a && a.fvg.zones.some((z) => z.inside) ? T.warn : T.dim }}>{a ? a.fvg.zones.length : 0}{a && a.fvg.zones.some((z) => z.inside) ? " · in one" : ""}</b></span>
+              <button className="why" style={{ marginLeft: "auto" }} onClick={() => { setTab("analyzer"); setOpenWhy(openWhy === "verdict" ? null : "verdict"); }}>WHY?</button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="shell">
@@ -1363,7 +1436,7 @@ export default function ForexAnalyzer() {
           <div className="grid" style={{ gap: 14 }}>
             {!a && <Card title="Not enough data"><p className="note">At least 30 candles are needed before structure, indicators or zones can be computed. Load more data.</p></Card>}
 
-            {a && tab === "analyzer" && <AnalyzerTab {...{ a, led, bias, status, htf, ladder, digits, layers, setLayers, scenarioLines, openWhy, setOpenWhy, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, htfTf, scen, source }} />}
+            {a && tab === "analyzer" && <AnalyzerTab {...{ a, led, bias, status, htf, ladder, digits, layers, setLayers, scenarioLines, openWhy, setOpenWhy, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, htfTf, scen, source, verdict }} />}
             {a && tab === "structure" && <StructureTab {...{ a, digits, openWhy, setOpenWhy, ladder, htfTf, tradeTf: tfMismatch ? nativeTf : tradeTf }} />}
             {a && tab === "scenarios" && <ScenariosTab {...{ a, led, scen, digits, checks, toggleCheck, openWhy, setOpenWhy, status, htf }} />}
             {a && tab === "risk" && <RiskTab {...{ a, scen, digits, pair, pairLabel, events, setEvents, eventDraft, setEventDraft }} />}
@@ -1381,7 +1454,7 @@ export default function ForexAnalyzer() {
 }
 
 /* ============================== ANALYZER TAB =============================== */
-function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLayers, scenarioLines, openWhy, setOpenWhy, pairLabel, tradeTf, htfTf, scen, source }) {
+function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLayers, scenarioLines, openWhy, setOpenWhy, pairLabel, tradeTf, htfTf, scen, source, verdict }) {
   const rows = [
     ["Higher timeframe", htf?.available ? htf.read : "Unavailable", htf?.available ? `The ${htf.tf} series built from this data reads ${htf.structure.toLowerCase()} structure with ${htf.strength.toLowerCase()} trend strength.` : `A ${htfTf} series cannot be built from the loaded data (${htf?.reason || "unavailable"}).`],
     ["Market structure", a.structRead, a.structure.detail],
@@ -1399,6 +1472,24 @@ function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLay
 
   return (
     <>
+      {verdict && (
+        <Card accent={toneColor(verdict.tone)} title="Directional read" right={<Pill tone={verdict.tone} solid>{verdict.score} vs {verdict.against}</Pill>}>
+          <h2 style={{ fontSize: 27, color: toneColor(verdict.tone), lineHeight: 1.1 }}>{verdict.action}</h2>
+          <p className="note mt" style={{ fontSize: 13 }}>{verdict.reason}</p>
+          <div className="grid g3 mt" style={{ gap: 10 }}>
+            <Stat label="Trigger — not yet met" value={verdict.trigger} tone={verdict.tone} />
+            <Stat label="Invalidation" value={verdict.invalidation || "—"} tone="warn" sub={verdict.side ? `a close past this ends the ${verdict.side === "bull" ? "bullish" : "bearish"} case` : "nothing to invalidate"} />
+            <Stat label="Volatility check" value={`${a.atr.toFixed(digits)} ATR`} sub={`${a.volatility.toLowerCase()} — size the stop against this`} />
+          </div>
+          {verdict.blockers.length > 0 && (
+            <div className="mt"><Warn level="med"><b>Working against it.</b><ul style={{ margin: "6px 0 0 16px", padding: 0 }}>{verdict.blockers.map((b, i) => <li key={i} style={{ marginBottom: 3 }}>{b}</li>)}</ul></Warn></div>
+          )}
+          <div className="mt"><Why id="verdict" open={openWhy} setOpen={setOpenWhy}>
+            The word "potential" is doing real work here. This is a reading of what the loaded candles currently favour, produced by counting agreeing evidence — it is not a forecast, and the score has never been tested against outcomes. The trigger is the thing that has not happened yet: until that close prints, the read is a hypothesis. The invalidation is the price at which the reasoning above stops being true, which is why it is quoted next to the direction rather than buried three tabs away.
+          </Why></div>
+        </Card>
+      )}
+
       <Card accent={toneColor(bias.tone)}>
         <div className="spread" style={{ flexWrap: "wrap" }}>
           <div>
