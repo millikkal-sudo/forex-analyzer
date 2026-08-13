@@ -136,6 +136,59 @@ const CSS = `
 .fx ::-webkit-scrollbar{height:9px;width:9px}
 .fx ::-webkit-scrollbar-thumb{background:${T.line2};border-radius:9px}
 .fx ::-webkit-scrollbar-track{background:transparent}
+
+/* nav — grouped by workflow stage */
+.nav{display:flex;align-items:flex-end;gap:0;margin-left:auto;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+.nav::-webkit-scrollbar{display:none}
+.navgrp{display:flex;flex-direction:column;gap:4px;padding:0 11px;border-left:1px solid var(--line);flex:none}
+.navgrp:first-child{border-left:none;padding-left:0}
+.navgrp:last-child{padding-right:0}
+.navgrp>i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);white-space:nowrap;padding-left:3px}
+.navgrp[data-active="1"]>i{color:${T.info}}
+.navgrp>div{display:flex;gap:2px}
+.nav button{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:6px;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-family:'IBM Plex Mono',monospace;white-space:nowrap}
+.ico{flex:none;opacity:.9}
+@media (max-width:900px){.nav{margin-left:0;width:100%;padding:2px 0 1px}.topin{gap:10px}.navgrp{padding:0 9px}.nav button{padding:7px 9px;font-size:10.5px;letter-spacing:.06em}}
+
+/* collapsible cards */
+.fold>header{padding:0;gap:0}
+.fold[data-open="0"]>header{border-bottom:none}
+.foldbtn{display:flex;align-items:center;gap:9px;width:100%;padding:12px 14px;text-align:left}
+.foldbtn h3{font-size:12.5px;letter-spacing:.09em;text-transform:uppercase}
+.foldbtn:hover h3{color:#fff}
+.chev{margin-left:auto;color:var(--faint);font-size:11px;transition:transform .18s ease;flex:none}
+
+/* segmented control */
+.seg{display:flex;gap:3px;background:${T.ink};border:1px solid var(--line);border-radius:8px;padding:3px}
+.seg button{flex:1;padding:7px 6px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.seg button:hover{color:var(--text);background:var(--panel2)}
+.seg button[data-on="1"]{background:var(--text);color:var(--ink);font-weight:600}
+
+/* chart toolbar, legend, tooltip */
+.cbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:9px}
+.cbar .sep{width:1px;height:18px;background:var(--line)}
+.cbar .zbtn{padding:5px 8px;border-radius:6px;border:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--dim);line-height:1}
+.cbar .zbtn:hover{color:var(--text);border-color:${T.line2}}
+.cbar .zbtn[data-on="1"]{background:var(--text);color:var(--ink);border-color:var(--text);font-weight:600}
+.cbar .zbtn:disabled{opacity:.35;cursor:not-allowed}
+.legend{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 2px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--dim)}
+.legend span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.legend i{display:block;width:14px;height:0;border-top:2px solid;flex:none}
+.legend em{font-style:normal;color:var(--text)}
+.cwrap{position:relative;touch-action:pan-y}
+.cwrap svg{display:block;cursor:crosshair;touch-action:pan-y}
+.cwrap[data-drag="1"] svg{cursor:grabbing}
+.tip{position:absolute;top:8px;z-index:5;pointer-events:none;min-width:150px;background:rgba(8,11,17,.96);border:1px solid ${T.line2};border-radius:8px;padding:8px 10px;box-shadow:0 6px 22px rgba(0,0,0,.45)}
+.tip b{display:block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.06em;color:var(--faint);font-weight:500;margin-bottom:5px}
+.tip .r{display:flex;justify-content:space-between;gap:14px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:1.65}
+.tip .r span{color:var(--faint)}
+.tip .r em{font-style:normal;color:var(--text);font-variant-numeric:tabular-nums}
+.tip .div{height:1px;background:var(--line);margin:6px 0}
+
+/* mobile: the chart comes before the input controls */
+.sidebyside>.side{min-width:0}
+.sidebyside>.main{min-width:0}
+@media (max-width:980px){.sidebyside>.main{order:1}.sidebyside>.side{order:2}}
 `;
 
 /* ------------------------------------------------------------ instruments -- */
@@ -992,23 +1045,132 @@ function SourceTag({ source }) {
   return <span className="pill" style={{ color: c, borderColor: c + "66", background: c + "14", fontWeight: 600 }}>{txt}</span>;
 }
 
+/* ------------------------------------------------- collapsible card shell -- */
+function Fold({ title, right, hint, open, onToggle, children, accent }) {
+  return (
+    <section className="card fold fade" data-open={open ? "1" : "0"} style={accent ? { borderTopColor: accent, borderTopWidth: 2 } : undefined}>
+      <header>
+        <button className="foldbtn" aria-expanded={open} onClick={onToggle}>
+          <h3>{title}</h3>
+          {hint && <span className="tag">{hint}</span>}
+          {right}
+          <span className="chev" style={{ transform: open ? "rotate(180deg)" : "none" }}>▾</span>
+        </button>
+      </header>
+      {open && <div className="body">{children}</div>}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ icons -- */
+const ICON_PATHS = {
+  analyzer: <><path d="M7 3v4M7 15v6M17 3v6M17 17v4" /><rect x="4.5" y="7" width="5" height="8" rx="1" /><rect x="14.5" y="9" width="5" height="8" rx="1" /></>,
+  structure: <path d="M3 17l5-6 4 4 5-8 4 5" />,
+  scenarios: <><path d="M4 12h5" /><path d="M9 12l6-6h5" /><path d="M9 12l6 6h5" /></>,
+  risk: <path d="M12 3l7 3v6c0 4.4-2.9 7.6-7 9-4.1-1.4-7-4.6-7-9V6z" />,
+  learn: <><path d="M4 5.5A2.5 2.5 0 016.5 3H19v15H6.5A2.5 2.5 0 004 20.5z" /><path d="M19 18v3H6.5" /></>,
+  journal: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
+};
+function Ico({ name }) {
+  return (
+    <svg className="ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICON_PATHS[name]}</svg>
+  );
+}
+
 /* ================================== CHART ================================== */
+const clampN = (v, mn, mx) => Math.max(mn, Math.min(mx, v));
+const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** Axis label: only as much of the stamp as the timeframe and the visible span need. */
+function fmtBarTime(t, tfMin, withDate) {
+  const d = new Date(t);
+  const day = `${pad2(d.getUTCDate())} ${MON3[d.getUTCMonth()]}`;
+  const hm = `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+  if (tfMin >= 10080) return `${day} '${String(d.getUTCFullYear()).slice(2)}`;
+  if (tfMin >= 1440) return day;
+  return withDate ? `${day} ${hm}` : hm;
+}
+function fmtBarStamp(t, tfMin) {
+  const d = new Date(t);
+  const base = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+  return tfMin >= 1440 ? base : `${base} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
+}
+
+/**
+ * One SVG, stacked panels: price, then whichever subpanels are switched on, then a
+ * shared time axis. The crosshair spans all of them, which is the whole point of
+ * keeping them in a single coordinate space.
+ */
 function ChartPanel({ a, digits, layers, scenarioLines }) {
   const wrap = useRef(null);
+  const svgRef = useRef(null);
+  const geo = useRef({ padL: 8, plotW: 800, len: 1 });
+  const drag = useRef(null);
   const [w, setW] = useState(900);
+  const [panes, setPanes] = useState({ rsi: true, macd: false, volume: false });
+  const [hover, setHover] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const len = a ? a.candles.length : 0;
+  const [view, setView] = useState({ span: 150, end: len });
+
   useEffect(() => {
     if (!wrap.current) return;
     const ro = new ResizeObserver((e) => setW(Math.max(320, e[0].contentRect.width)));
     ro.observe(wrap.current);
     return () => ro.disconnect();
   }, []);
+
+  // A different series — reload, refresh, timeframe change — snaps back to the newest bar.
+  useEffect(() => { setView((v) => ({ span: clampN(v.span, Math.min(30, len || 30), Math.max(len, 30)), end: len })); }, [len]);
+
+  const zoomAt = useCallback((frac, factor) => {
+    setView((v) => {
+      const total = geo.current.len || 1;
+      const span = clampN(Math.round(v.span * factor), Math.min(30, total), total);
+      const anchor = v.end - v.span + frac * v.span;
+      return { span, end: clampN(Math.round(anchor + (1 - frac) * span), span, total) };
+    });
+  }, []);
+
+  // Wheel has to be a native non-passive listener: React's synthetic one cannot preventDefault.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (!e.deltaY) return;
+      e.preventDefault();
+      const g = geo.current;
+      const r = el.getBoundingClientRect();
+      zoomAt(clampN((e.clientX - r.left - g.padL) / g.plotW, 0, 1), e.deltaY > 0 ? 1.18 : 1 / 1.18);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomAt, a ? 1 : 0]);
+
   if (!a) return null;
 
-  const H = 400, RSI_H = 84, padR = 62, padL = 8, padT = 12, padB = 18;
-  const view = Math.min(a.candles.length, 150);
-  const start = a.candles.length - view;
-  const c = a.candles.slice(start);
-  const plotW = w - padL - padR, plotH = H - padT - padB;
+  /* ---- geometry ---- */
+  const narrow = w < 560;
+  const padL = 8, padR = narrow ? 52 : 64, padT = 12, GAP = 10, AXIS_H = 22;
+  const priceH = narrow ? 300 : 384;
+  const total = a.candles.length;
+  const span = clampN(view.span, Math.min(30, total), total);
+  const end = clampN(view.end, span, total);
+  const start = end - span;
+  const c = a.candles.slice(start, end);
+  const plotW = Math.max(80, w - padL - padR);
+  const plotH = priceH - padT - 6;
+  const step = plotW / span;
+  const cw = Math.max(1, Math.min(15, step * 0.62));
+  geo.current = { padL, plotW, len: total };
+
+  const subs = [];
+  let cur = padT + plotH + GAP;
+  if (panes.rsi) { subs.push({ key: "rsi", y0: cur, h: 76 }); cur += 86; }
+  if (panes.macd) { subs.push({ key: "macd", y0: cur, h: 78 }); cur += 88; }
+  if (panes.volume) { subs.push({ key: "volume", y0: cur, h: 56 }); cur += 66; }
+  const axisY = cur;
+  const H = axisY + AXIS_H;
 
   let lo = Math.min(...c.map((k) => k.l)), hi = Math.max(...c.map((k) => k.h));
   const extra = [];
@@ -1019,137 +1181,311 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
   const pad = (hi - lo) * 0.06 || 1;
   lo -= pad; hi += pad;
 
-  const X = (i) => padL + (i + 0.5) * (plotW / view);
+  const X = (i) => padL + (i + 0.5) * step;
   const Y = (p) => padT + (1 - (p - lo) / (hi - lo)) * plotH;
-  const cw = Math.max(1.5, (plotW / view) * 0.62);
-  const idx = (globalI) => globalI - start;
-  const inView = (globalI) => globalI >= start;
+  const paneY = (p, frac) => p.y0 + 13 + (1 - clampN(frac, 0, 1)) * (p.h - 18);
+  const idx = (g) => g - start;
+  const inView = (g) => g >= start && g < end;
 
-  const emaLine = (arr, color, label) => {
-    const pts = [];
+  const EMAS = [[20, "#6EA8FF"], [50, "#F2A93B"], [200, "#A97BFF"]];
+  const emaLine = ([period, color]) => {
+    const arr = a.ema[period], pts = [];
     for (let i = 0; i < c.length; i++) { const v = arr[start + i]; if (v != null) pts.push(`${X(i)},${Y(v)}`); }
-    if (pts.length < 2) return null;
-    return <g key={label}><polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth="1.3" opacity="0.9" /></g>;
+    return pts.length > 1 ? <polyline key={period} points={pts.join(" ")} fill="none" stroke={color} strokeWidth="1.3" opacity="0.9" /> : null;
   };
 
   const ticks = 6;
   const priceTicks = Array.from({ length: ticks }, (_, i) => lo + ((hi - lo) * i) / (ticks - 1));
-  const rsiVals = a.rsi.slice(start);
-  const rsiPts = rsiVals.map((v, i) => (v == null ? null : `${X(i)},${padT + (1 - v / 100) * (RSI_H - 22)}`)).filter(Boolean);
+  const tickCount = Math.max(2, Math.min(9, Math.floor(plotW / 96)));
+  const tickStep = Math.max(1, Math.ceil(span / tickCount));
+  const timeTicks = [];
+  for (let i = span - 1; i >= 0; i -= tickStep) timeTicks.push(i);
+  const withDate = a.tfMin < 1440 && span * a.tfMin > 1440;
+
+  const rsiV = a.rsi.slice(start, end);
+  const mH = a.macd.hist.slice(start, end), mL = a.macd.line.slice(start, end), mS = a.macd.signal.slice(start, end);
+  const mMax = Math.max(1e-12, ...[...mH, ...mL, ...mS].filter((v) => v != null).map(Math.abs));
+  const vols = c.map((k) => nz(k.v, 0));
+  const volMax = Math.max(0, ...vols);
 
   const labelColor = { HH: T.bull, HL: T.bull, LH: T.bear, LL: T.bear, H: T.dim, L: T.dim };
+  const hi_ = hover != null && hover >= 0 && hover < c.length ? hover : null;
+  const hk = hi_ != null ? c[hi_] : null;
+
+  /* ---- pan + hover ---- */
+  const onDown = (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    drag.current = { x: e.clientX, end };
+    setDragging(true);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+  };
+  const onMove = (e) => {
+    if (drag.current) {
+      const shift = Math.round(-(e.clientX - drag.current.x) / step);
+      const nEnd = clampN(drag.current.end + shift, span, total);
+      if (nEnd !== end) setView({ span, end: nEnd });
+      if (hover != null) setHover(null);
+      return;
+    }
+    const r = e.currentTarget.getBoundingClientRect();
+    const i = Math.floor((e.clientX - r.left - padL) / step);
+    setHover(i >= 0 && i < span ? i : null);
+  };
+  const onUp = (e) => {
+    if (!drag.current) return;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+    drag.current = null; setDragging(false);
+  };
+
+  const setSpan = (n) => setView((v) => { const s = clampN(n, Math.min(30, total), total); return { span: s, end: clampN(v.end, s, total) }; });
+  const pan = (bars) => setView((v) => ({ span, end: clampN(v.end + bars, span, total) }));
+  const presets = [60, 150, 300, 600].filter((n) => n < total);
+  const pane = (k) => setPanes((s) => ({ ...s, [k]: !s[k] }));
+  const emaVal = (p) => { const v = a.ema[p][end - 1]; return v == null ? "—" : v.toFixed(digits); };
 
   return (
     <div ref={wrap} style={{ width: "100%" }}>
-      <svg width={w} height={H} role="img" aria-label="Annotated price chart" style={{ display: "block" }}>
-        <defs>
-          <pattern id="fvgBull" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-            <rect width="7" height="7" fill="rgba(20,192,138,0.07)" />
-            <line x1="0" y1="0" x2="0" y2="7" stroke={T.bull} strokeWidth="1.6" opacity="0.5" />
-          </pattern>
-          <pattern id="fvgBear" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-            <rect width="7" height="7" fill="rgba(240,69,90,0.07)" />
-            <line x1="0" y1="0" x2="0" y2="7" stroke={T.bear} strokeWidth="1.6" opacity="0.5" />
-          </pattern>
-        </defs>
-        <rect x="0" y="0" width={w} height={H} fill={T.panel} />
-        {priceTicks.map((p, i) => (
-          <g key={i}>
-            <line x1={padL} x2={w - padR} y1={Y(p)} y2={Y(p)} stroke={T.line} strokeWidth="1" />
-            <text x={w - padR + 6} y={Y(p) + 3.5} fill={T.faint} fontSize="10" fontFamily="IBM Plex Mono, monospace">{p.toFixed(digits)}</text>
-          </g>
+      <div className="cbar">
+        <span className="lbl" style={{ margin: 0 }}>Zoom</span>
+        {presets.map((n) => <button key={n} className="zbtn" data-on={span === n ? "1" : "0"} onClick={() => setSpan(n)}>{n}</button>)}
+        <button className="zbtn" data-on={span === total ? "1" : "0"} onClick={() => setSpan(total)}>All</button>
+        <button className="zbtn" onClick={() => zoomAt(0.5, 1 / 1.35)} aria-label="Zoom in">+</button>
+        <button className="zbtn" onClick={() => zoomAt(0.5, 1.35)} aria-label="Zoom out">−</button>
+        <span className="sep" />
+        <button className="zbtn" onClick={() => pan(-Math.max(1, Math.round(span / 4)))} disabled={start === 0} aria-label="Scroll back">‹</button>
+        <button className="zbtn" onClick={() => pan(Math.max(1, Math.round(span / 4)))} disabled={end === total} aria-label="Scroll forward">›</button>
+        {end !== total && <button className="zbtn" onClick={() => setView({ span, end: total })}>Latest</button>}
+        <span className="sep" />
+        <span className="lbl" style={{ margin: 0 }}>Panels</span>
+        {[["rsi", "RSI"], ["macd", "MACD"], ["volume", "Volume"]].map(([k, l]) => (
+          <button key={k} className="zbtn" data-on={panes[k] ? "1" : "0"} onClick={() => pane(k)}>{l}</button>
         ))}
+        <span className="tag" style={{ marginLeft: "auto" }}>bars {start + 1}–{end} of {total}</span>
+      </div>
 
-        {layers.sr && a.sr.all.map((z, i) => (
-          <g key={"z" + i}>
-            <rect x={padL} y={Y(z.hi)} width={plotW} height={Math.max(2, Y(z.lo) - Y(z.hi))}
-              fill={z.side === "support" ? T.bullDim : T.bearDim} stroke={(z.side === "support" ? T.bull : T.bear) + "55"} strokeWidth="1" />
-            <text x={padL + 5} y={Y(z.hi) - 3} fill={z.side === "support" ? T.bull : T.bear} fontSize="9.5" fontFamily="IBM Plex Mono, monospace">{z.name} · {z.touches}×</text>
-          </g>
-        ))}
+      <div className="cwrap" data-drag={dragging ? "1" : "0"}>
+        <svg ref={svgRef} width={w} height={H} role="img" aria-label={`Annotated price chart, bars ${start + 1} to ${end} of ${total}`}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+          onPointerLeave={(e) => { onUp(e); setHover(null); }}>
+          <defs>
+            <pattern id="fvgBull" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+              <rect width="7" height="7" fill="rgba(20,192,138,0.07)" />
+              <line x1="0" y1="0" x2="0" y2="7" stroke={T.bull} strokeWidth="1.6" opacity="0.5" />
+            </pattern>
+            <pattern id="fvgBear" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+              <rect width="7" height="7" fill="rgba(240,69,90,0.07)" />
+              <line x1="0" y1="0" x2="0" y2="7" stroke={T.bear} strokeWidth="1.6" opacity="0.5" />
+            </pattern>
+          </defs>
+          <rect x="0" y="0" width={w} height={H} fill={T.panel} />
 
-        {layers.sd && a.sd.map((z, i) => inView(z.i) && (
-          <rect key={"sd" + i} x={X(idx(z.i))} y={Y(z.hi)} width={Math.max(4, w - padR - X(idx(z.i)))} height={Math.max(2, Y(z.lo) - Y(z.hi))}
-            fill={z.kind === "demand" ? "rgba(20,192,138,0.10)" : "rgba(240,69,90,0.10)"}
-            stroke={(z.kind === "demand" ? T.bull : T.bear) + "44"} strokeDasharray="3 3" strokeWidth="1" />
-        ))}
-
-        {layers.fvg && a.fvg.zones.map((z, i) => {
-          const x0 = Math.max(padL, X(idx(z.i)));
-          const yTop = Y(z.hi), hh = Math.max(2.5, Y(z.lo) - Y(z.hi));
-          return (
-            <g key={"f" + i}>
-              <rect x={x0} y={yTop} width={Math.max(6, w - padR - x0)} height={hh}
-                fill={z.kind === "bullish" ? "url(#fvgBull)" : "url(#fvgBear)"}
-                stroke={(z.kind === "bullish" ? T.bull : T.bear) + "66"} strokeWidth="1" />
-              <text x={x0 + 4} y={yTop + hh / 2 + 3} fill={z.kind === "bullish" ? T.bull : T.bear}
-                fontSize="8.5" fontWeight="700" fontFamily="IBM Plex Mono, monospace">
-                FVG{z.state === "Partially filled" ? " \u00bd" : ""}
-              </text>
+          {/* price gridlines + right-hand price scale */}
+          {priceTicks.map((p, i) => (
+            <g key={"pt" + i}>
+              <line x1={padL} x2={w - padR} y1={Y(p)} y2={Y(p)} stroke={T.line} strokeWidth="1" />
+              <text x={w - padR + 6} y={Y(p) + 3.5} fill={T.faint} fontSize="10" fontFamily="IBM Plex Mono, monospace">{p.toFixed(digits)}</text>
             </g>
-          );
-        })}
+          ))}
 
-        {layers.liquidity && a.liq.levels.slice(0, 5).map((l, i) => (
-          <g key={"l" + i}>
-            <line x1={padL} x2={w - padR} y1={Y(l.price)} y2={Y(l.price)} stroke={T.violet} strokeWidth="1" strokeDasharray="2 4" opacity="0.8" />
-            <text x={padL + 5} y={Y(l.price) - 3} fill={T.violet} fontSize="9" fontFamily="IBM Plex Mono, monospace" opacity="0.95">{l.kind}</text>
-          </g>
-        ))}
+          {/* time gridlines across every panel */}
+          {timeTicks.map((i) => (
+            <line key={"tg" + i} x1={X(i)} x2={X(i)} y1={padT} y2={axisY} stroke={T.line} strokeWidth="1" opacity="0.55" />
+          ))}
 
-        {layers.ema && (<>{emaLine(a.ema[20], "#6EA8FF", "e20")}{emaLine(a.ema[50], "#F2A93B", "e50")}{emaLine(a.ema[200], "#A97BFF", "e200")}</>)}
-
-        {c.map((k, i) => {
-          const up = k.c >= k.o, col = up ? T.bull : T.bear;
-          const y1 = Y(Math.max(k.o, k.c)), y2 = Y(Math.min(k.o, k.c));
-          return (
-            <g key={i}>
-              <line x1={X(i)} x2={X(i)} y1={Y(k.h)} y2={Y(k.l)} stroke={col} strokeWidth="1" />
-              <rect x={X(i) - cw / 2} y={y1} width={cw} height={Math.max(1, y2 - y1)} fill={up ? "none" : col} stroke={col} strokeWidth="1" />
+          {layers.sr && a.sr.all.map((z, i) => (
+            <g key={"z" + i}>
+              <rect x={padL} y={Y(z.hi)} width={plotW} height={Math.max(2, Y(z.lo) - Y(z.hi))}
+                fill={z.side === "support" ? T.bullDim : T.bearDim} stroke={(z.side === "support" ? T.bull : T.bear) + "55"} strokeWidth="1" />
+              <text x={padL + 5} y={Y(z.hi) - 3} fill={z.side === "support" ? T.bull : T.bear} fontSize="9.5" fontFamily="IBM Plex Mono, monospace">{z.name} · {z.touches}×</text>
             </g>
-          );
-        })}
+          ))}
 
-        {layers.structure && a.pivots.filter((p) => inView(p.i)).map((p, i) => (
-          <text key={"p" + i} x={X(idx(p.i))} y={p.type === "H" ? Y(p.price) - 6 : Y(p.price) + 13}
-            fill={labelColor[p.label] || T.dim} fontSize="9.5" fontWeight="600" textAnchor="middle" fontFamily="IBM Plex Mono, monospace">{p.label}</text>
-        ))}
+          {layers.sd && a.sd.map((z, i) => inView(z.i) && (
+            <rect key={"sd" + i} x={X(idx(z.i))} y={Y(z.hi)} width={Math.max(4, w - padR - X(idx(z.i)))} height={Math.max(2, Y(z.lo) - Y(z.hi))}
+              fill={z.kind === "demand" ? "rgba(20,192,138,0.10)" : "rgba(240,69,90,0.10)"}
+              stroke={(z.kind === "demand" ? T.bull : T.bear) + "44"} strokeDasharray="3 3" strokeWidth="1" />
+          ))}
 
-        {layers.structure && a.events.filter((e) => inView(e.i)).map((e, i) => (
-          <g key={"e" + i}>
-            <line x1={X(Math.max(0, idx(e.i) - 6))} x2={X(Math.min(view - 1, idx(e.i) + 3))} y1={Y(e.price)} y2={Y(e.price)}
-              stroke={e.dir === "up" ? T.bull : T.bear} strokeWidth="1.2" strokeDasharray="5 3" />
-            <text x={X(idx(e.i)) + 5} y={Y(e.price) - 4} fill={e.dir === "up" ? T.bull : T.bear} fontSize="9" fontWeight="700" fontFamily="IBM Plex Mono, monospace">{e.kind}</text>
-          </g>
-        ))}
+          {layers.fvg && a.fvg.zones.filter((z) => z.i < end).map((z, i) => {
+            const x0 = Math.max(padL, X(idx(z.i)));
+            const yTop = Y(z.hi), hh = Math.max(2.5, Y(z.lo) - Y(z.hi));
+            return (
+              <g key={"f" + i}>
+                <rect x={x0} y={yTop} width={Math.max(6, w - padR - x0)} height={hh}
+                  fill={z.kind === "bullish" ? "url(#fvgBull)" : "url(#fvgBear)"}
+                  stroke={(z.kind === "bullish" ? T.bull : T.bear) + "66"} strokeWidth="1" />
+                <text x={x0 + 4} y={yTop + hh / 2 + 3} fill={z.kind === "bullish" ? T.bull : T.bear}
+                  fontSize="8.5" fontWeight="700" fontFamily="IBM Plex Mono, monospace">
+                  FVG{z.state === "Partially filled" ? " \u00bd" : ""}
+                </text>
+              </g>
+            );
+          })}
 
-        {layers.scenario && scenarioLines.filter((l) => l.price > lo && l.price < hi).map((l, i) => (
-          <g key={"s" + i}>
-            <line x1={padL} x2={w - padR} y1={Y(l.price)} y2={Y(l.price)} stroke={toneColor(l.tone)} strokeWidth="1.1" strokeDasharray="7 4" opacity="0.85" />
-            <text x={w - padR - 4} y={Y(l.price) - 4} fill={toneColor(l.tone)} fontSize="9" textAnchor="end" fontFamily="IBM Plex Mono, monospace">{l.label}</text>
-          </g>
-        ))}
+          {layers.liquidity && a.liq.levels.slice(0, 5).map((l, i) => (
+            <g key={"l" + i}>
+              <line x1={padL} x2={w - padR} y1={Y(l.price)} y2={Y(l.price)} stroke={T.violet} strokeWidth="1" strokeDasharray="2 4" opacity="0.8" />
+              <text x={padL + 5} y={Y(l.price) - 3} fill={T.violet} fontSize="9" fontFamily="IBM Plex Mono, monospace" opacity="0.95">{l.kind}</text>
+            </g>
+          ))}
 
-        <line x1={padL} x2={w - padR} y1={Y(a.price)} y2={Y(a.price)} stroke={T.text} strokeWidth="1" opacity="0.55" />
-        <rect x={w - padR + 1} y={Y(a.price) - 8} width={padR - 4} height={16} fill={T.text} rx="3" />
-        <text x={w - padR + 5} y={Y(a.price) + 3.5} fill={T.ink} fontSize="10" fontWeight="700" fontFamily="IBM Plex Mono, monospace">{a.price.toFixed(digits)}</text>
-      </svg>
+          {layers.ema && <g>{EMAS.map(emaLine)}</g>}
 
-      <svg width={w} height={RSI_H} role="img" aria-label="RSI panel" style={{ display: "block" }}>
-        <rect x="0" y="0" width={w} height={RSI_H} fill={T.panel} />
-        {[30, 50, 70].map((lv) => (
-          <g key={lv}>
-            <line x1={padL} x2={w - padR} y1={padT + (1 - lv / 100) * (RSI_H - 22)} y2={padT + (1 - lv / 100) * (RSI_H - 22)}
-              stroke={lv === 50 ? T.line : T.line2} strokeDasharray={lv === 50 ? "" : "3 3"} strokeWidth="1" />
-            <text x={w - padR + 6} y={padT + (1 - lv / 100) * (RSI_H - 22) + 3} fill={T.faint} fontSize="9" fontFamily="IBM Plex Mono, monospace">{lv}</text>
-          </g>
-        ))}
-        {rsiPts.length > 1 && <polyline points={rsiPts.join(" ")} fill="none" stroke={T.info} strokeWidth="1.3" />}
-        <text x={padL + 4} y={12} fill={T.faint} fontSize="9.5" fontFamily="IBM Plex Mono, monospace">RSI 14 · {a.rsiVal != null ? a.rsiVal.toFixed(1) : "—"}</text>
-      </svg>
+          {c.map((k, i) => {
+            const up = k.c >= k.o, col = up ? T.bull : T.bear;
+            const y1 = Y(Math.max(k.o, k.c)), y2 = Y(Math.min(k.o, k.c));
+            return (
+              <g key={i}>
+                <line x1={X(i)} x2={X(i)} y1={Y(k.h)} y2={Y(k.l)} stroke={col} strokeWidth="1" />
+                <rect x={X(i) - cw / 2} y={y1} width={cw} height={Math.max(1, y2 - y1)} fill={up ? "none" : col} stroke={col} strokeWidth="1" />
+              </g>
+            );
+          })}
+
+          {layers.structure && a.pivots.filter((p) => inView(p.i)).map((p, i) => (
+            <text key={"p" + i} x={X(idx(p.i))} y={p.type === "H" ? Y(p.price) - 6 : Y(p.price) + 13}
+              fill={labelColor[p.label] || T.dim} fontSize="9.5" fontWeight="600" textAnchor="middle" fontFamily="IBM Plex Mono, monospace">{p.label}</text>
+          ))}
+
+          {layers.structure && a.events.filter((e) => inView(e.i)).map((e, i) => (
+            <g key={"e" + i}>
+              <line x1={X(Math.max(0, idx(e.i) - 6))} x2={X(Math.min(span - 1, idx(e.i) + 3))} y1={Y(e.price)} y2={Y(e.price)}
+                stroke={e.dir === "up" ? T.bull : T.bear} strokeWidth="1.2" strokeDasharray="5 3" />
+              <text x={X(idx(e.i)) + 5} y={Y(e.price) - 4} fill={e.dir === "up" ? T.bull : T.bear} fontSize="9" fontWeight="700" fontFamily="IBM Plex Mono, monospace">{e.kind}</text>
+            </g>
+          ))}
+
+          {layers.scenario && scenarioLines.filter((l) => l.price > lo && l.price < hi).map((l, i) => (
+            <g key={"s" + i}>
+              <line x1={padL} x2={w - padR} y1={Y(l.price)} y2={Y(l.price)} stroke={toneColor(l.tone)} strokeWidth="1.1" strokeDasharray="7 4" opacity="0.85" />
+              <text x={w - padR - 4} y={Y(l.price) - 4} fill={toneColor(l.tone)} fontSize="9" textAnchor="end" fontFamily="IBM Plex Mono, monospace">{l.label}</text>
+            </g>
+          ))}
+
+          {/* last price */}
+          <line x1={padL} x2={w - padR} y1={Y(a.price)} y2={Y(a.price)} stroke={T.text} strokeWidth="1" opacity="0.55" />
+          <rect x={w - padR + 1} y={Y(a.price) - 8} width={padR - 4} height={16} fill={T.text} rx="3" />
+          <text x={w - padR + 5} y={Y(a.price) + 3.5} fill={T.ink} fontSize="10" fontWeight="700" fontFamily="IBM Plex Mono, monospace">{a.price.toFixed(digits)}</text>
+
+          {/* ---------------------------- subpanels ---------------------------- */}
+          {subs.map((p) => {
+            if (p.key === "rsi") {
+              const pts = rsiV.map((v, i) => (v == null ? null : `${X(i)},${paneY(p, v / 100)}`)).filter(Boolean);
+              return (
+                <g key="rsi">
+                  <line x1={padL} x2={w - padR} y1={p.y0} y2={p.y0} stroke={T.line} strokeWidth="1" />
+                  {[30, 50, 70].map((lv) => (
+                    <g key={lv}>
+                      <line x1={padL} x2={w - padR} y1={paneY(p, lv / 100)} y2={paneY(p, lv / 100)} stroke={lv === 50 ? T.line : T.line2} strokeDasharray={lv === 50 ? "" : "3 3"} strokeWidth="1" />
+                      <text x={w - padR + 6} y={paneY(p, lv / 100) + 3} fill={T.faint} fontSize="9" fontFamily="IBM Plex Mono, monospace">{lv}</text>
+                    </g>
+                  ))}
+                  {pts.length > 1 && <polyline points={pts.join(" ")} fill="none" stroke={T.info} strokeWidth="1.3" />}
+                  <text x={padL + 4} y={p.y0 + 11} fill={T.faint} fontSize="9.5" fontFamily="IBM Plex Mono, monospace">RSI 14 · {a.rsiVal != null ? a.rsiVal.toFixed(1) : "—"}</text>
+                </g>
+              );
+            }
+            if (p.key === "macd") {
+              const f = (v) => (v == null ? null : (v / mMax + 1) / 2);
+              const lPts = mL.map((v, i) => (v == null ? null : `${X(i)},${paneY(p, f(v))}`)).filter(Boolean);
+              const sPts = mS.map((v, i) => (v == null ? null : `${X(i)},${paneY(p, f(v))}`)).filter(Boolean);
+              const zeroY = paneY(p, 0.5);
+              const bw = Math.max(1, Math.min(9, step * 0.55));
+              return (
+                <g key="macd">
+                  <line x1={padL} x2={w - padR} y1={p.y0} y2={p.y0} stroke={T.line} strokeWidth="1" />
+                  <line x1={padL} x2={w - padR} y1={zeroY} y2={zeroY} stroke={T.line2} strokeWidth="1" />
+                  <text x={w - padR + 6} y={zeroY + 3} fill={T.faint} fontSize="9" fontFamily="IBM Plex Mono, monospace">0</text>
+                  {mH.map((v, i) => {
+                    if (v == null) return null;
+                    const y = paneY(p, f(v));
+                    return <rect key={i} x={X(i) - bw / 2} y={Math.min(y, zeroY)} width={bw} height={Math.max(0.8, Math.abs(zeroY - y))}
+                      fill={v >= 0 ? T.bull : T.bear} opacity="0.5" />;
+                  })}
+                  {lPts.length > 1 && <polyline points={lPts.join(" ")} fill="none" stroke={T.info} strokeWidth="1.2" />}
+                  {sPts.length > 1 && <polyline points={sPts.join(" ")} fill="none" stroke={T.warn} strokeWidth="1.2" />}
+                  <text x={padL + 4} y={p.y0 + 11} fill={T.faint} fontSize="9.5" fontFamily="IBM Plex Mono, monospace">MACD 12/26/9 · histogram {last(mH.filter((v) => v != null)) != null ? last(mH.filter((v) => v != null)).toFixed(digits > 2 ? 5 : 3) : "—"}</text>
+                </g>
+              );
+            }
+            const bw = Math.max(1, Math.min(11, step * 0.6));
+            return (
+              <g key="volume">
+                <line x1={padL} x2={w - padR} y1={p.y0} y2={p.y0} stroke={T.line} strokeWidth="1" />
+                {volMax > 0 ? (
+                  <>
+                    {vols.map((v, i) => {
+                      const y = paneY(p, v / volMax), base = paneY(p, 0);
+                      return <rect key={i} x={X(i) - bw / 2} y={y} width={bw} height={Math.max(0.8, base - y)}
+                        fill={c[i].c >= c[i].o ? T.bull : T.bear} opacity="0.42" />;
+                    })}
+                    <text x={w - padR + 6} y={paneY(p, 1) + 8} fill={T.faint} fontSize="9" fontFamily="IBM Plex Mono, monospace">{volMax >= 1000 ? `${Math.round(volMax / 1000)}k` : Math.round(volMax)}</text>
+                    <text x={padL + 4} y={p.y0 + 11} fill={T.faint} fontSize="9.5" fontFamily="IBM Plex Mono, monospace">Volume</text>
+                  </>
+                ) : (
+                  <text x={padL + 4} y={p.y0 + 11} fill={T.faint} fontSize="9.5" fontFamily="IBM Plex Mono, monospace">Volume — not present in this data</text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* ---------------------------- time axis ---------------------------- */}
+          <line x1={padL} x2={w - padR} y1={axisY} y2={axisY} stroke={T.line2} strokeWidth="1" />
+          {timeTicks.map((i) => {
+            const x = clampN(X(i), padL + 22, w - padR - 22);
+            return <text key={"tt" + i} x={x} y={axisY + 14} fill={T.faint} fontSize="9.5" textAnchor="middle" fontFamily="IBM Plex Mono, monospace">{fmtBarTime(c[i].t, a.tfMin, withDate)}</text>;
+          })}
+
+          {/* ---------------------------- crosshair ---------------------------- */}
+          {hk && (
+            <g pointerEvents="none">
+              <line x1={X(hi_)} x2={X(hi_)} y1={padT} y2={axisY} stroke={T.text} strokeWidth="1" strokeDasharray="3 3" opacity="0.45" />
+              <line x1={padL} x2={w - padR} y1={Y(hk.c)} y2={Y(hk.c)} stroke={T.text} strokeWidth="1" strokeDasharray="3 3" opacity="0.28" />
+              <rect x={w - padR + 1} y={Y(hk.c) - 8} width={padR - 4} height={16} fill={T.panel2} stroke={T.line2} rx="3" />
+              <text x={w - padR + 5} y={Y(hk.c) + 3.5} fill={T.text} fontSize="10" fontFamily="IBM Plex Mono, monospace">{hk.c.toFixed(digits)}</text>
+              <rect x={clampN(X(hi_) - 44, padL, w - padR - 88)} y={axisY + 2} width="88" height="17" fill={T.panel2} stroke={T.line2} rx="3" />
+              <text x={clampN(X(hi_), padL + 44, w - padR - 44)} y={axisY + 14} fill={T.text} fontSize="9.5" textAnchor="middle" fontFamily="IBM Plex Mono, monospace">{fmtBarTime(hk.t, a.tfMin, a.tfMin < 1440)}</text>
+            </g>
+          )}
+        </svg>
+
+        {hk && (
+          <div className="tip" style={{ left: X(hi_), transform: X(hi_) > plotW * 0.58 ? "translateX(calc(-100% - 16px))" : "translateX(16px)" }}>
+            <b>{fmtBarStamp(hk.t, a.tfMin)}</b>
+            {[["O", hk.o], ["H", hk.h], ["L", hk.l], ["C", hk.c]].map(([k, v]) => (
+              <div className="r" key={k}><span>{k}</span><em style={{ color: k === "C" ? (hk.c >= hk.o ? T.bull : T.bear) : T.text }}>{v.toFixed(digits)}</em></div>
+            ))}
+            <div className="r"><span>Change</span><em style={{ color: hk.c >= hk.o ? T.bull : T.bear }}>{(hk.c - hk.o >= 0 ? "+" : "") + (hk.c - hk.o).toFixed(digits)} ({(((hk.c - hk.o) / hk.o) * 100).toFixed(2)}%)</em></div>
+            {hk.v != null && <div className="r"><span>Vol</span><em>{Math.round(hk.v).toLocaleString()}</em></div>}
+            <div className="div" />
+            {layers.ema && EMAS.map(([p, col]) => {
+              const v = a.ema[p][start + hi_];
+              return <div className="r" key={p}><span style={{ color: col }}>EMA{p}</span><em>{v == null ? "—" : v.toFixed(digits)}</em></div>;
+            })}
+            <div className="r"><span>RSI</span><em>{rsiV[hi_] == null ? "—" : rsiV[hi_].toFixed(1)}</em></div>
+            <div className="r"><span>MACD hist</span><em style={{ color: mH[hi_] == null ? T.text : mH[hi_] >= 0 ? T.bull : T.bear }}>{mH[hi_] == null ? "—" : mH[hi_].toFixed(digits > 2 ? 5 : 3)}</em></div>
+          </div>
+        )}
+      </div>
+
+      <div className="legend">
+        {layers.ema && EMAS.map(([p, col]) => <span key={p}><i style={{ borderColor: col }} />EMA{p} <em>{emaVal(p)}</em></span>)}
+        <span><i style={{ borderColor: T.bull }} />up bar</span>
+        <span><i style={{ borderColor: T.bear }} />down bar</span>
+        {panes.macd && <><span><i style={{ borderColor: T.info }} />MACD line</span><span><i style={{ borderColor: T.warn }} />signal</span></>}
+        <span style={{ marginLeft: "auto", color: T.faint }}>drag to pan · scroll to zoom · hover for values{a.tfMin < 1440 ? " · times UTC" : ""}</span>
+      </div>
     </div>
   );
 }
+
+/* ------------------------------------------------- navigation, by workflow -- */
+const NAV_GROUPS = [
+  { stage: "1 · Read", items: [["analyzer", "Analyzer", "analyzer"], ["structure", "Structure", "structure"]] },
+  { stage: "2 · Plan", items: [["scenarios", "Scenarios", "scenarios"], ["risk", "Risk", "risk"]] },
+  { stage: "3 · Review", items: [["learn", "Learn", "learn"], ["journal", "Journal", "journal"]] },
+];
+const SRC_TABS = [["paste", "Paste OHLC"], ["image", "Screenshot"], ["live", "Live feed"]];
 
 /* ================================ MAIN APP ================================= */
 export default function ForexAnalyzer() {
@@ -1173,6 +1509,9 @@ export default function ForexAnalyzer() {
   const [live, setLive] = useState({ provider: "twelvedata", key: "", bars: 500, tf: null, symbol: null, candles: null, fetchedAt: null, status: "idle", error: null });
   const [auto, setAuto] = useState(0);
   const [eventDraft, setEventDraft] = useState({ when: "", name: "", impact: "High" });
+  const [srcTab, setSrcTab] = useState(null);
+  const [folds, setFolds] = useState({ market: true, quality: false });
+  const toggleFold = (k) => setFolds((s) => ({ ...s, [k]: !s[k] }));
 
   const digits = (INSTRUMENTS[pair] || INSTRUMENTS["Custom pair"]).digits;
   const pairLabel = pair === "Custom pair" ? (customPair.trim() || "Custom pair") : pair;
@@ -1248,8 +1587,6 @@ export default function ForexAnalyzer() {
   };
   const toggleCheck = (k) => setChecks((s) => ({ ...s, [k]: !s[k] }));
 
-  const NAV = [["analyzer", "Forex Analyzer"], ["structure", "Market Structure"], ["scenarios", "Scenarios"], ["risk", "Risk"], ["learn", "Learn"], ["journal", "Journal"]];
-
   return (
     <div className="fx">
       <style>{CSS}</style>
@@ -1260,10 +1597,22 @@ export default function ForexAnalyzer() {
             <b style={{ color: T.text }}>FOREX ANALYZER</b>
             <span className="eyebrow" style={{ letterSpacing: ".1em" }}>scenarios, not predictions</span>
           </div>
-          <nav className="nav">
-            {NAV.map(([k, l]) => (
-              <button key={k} data-on={tab === k ? "1" : "0"} onClick={() => setTab(k)}>{l}</button>
-            ))}
+          <nav className="nav" aria-label="Workflow stages">
+            {NAV_GROUPS.map((g) => {
+              const active = g.items.some(([k]) => k === tab);
+              return (
+                <div className="navgrp" key={g.stage} data-active={active ? "1" : "0"}>
+                  <i>{g.stage}</i>
+                  <div>
+                    {g.items.map(([k, l, ic]) => (
+                      <button key={k} data-on={tab === k ? "1" : "0"} onClick={() => setTab(k)} aria-current={tab === k ? "page" : undefined}>
+                        <Ico name={ic} />{l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </nav>
         </div>
         {verdict && (
@@ -1313,8 +1662,8 @@ export default function ForexAnalyzer() {
 
         <div className="mt sidebyside">
           {/* ------------------------------- INPUT PANEL ------------------------------- */}
-          <div className="grid" style={{ gap: 14 }}>
-            <Card title="Market input">
+          <div className="grid side" style={{ gap: 14 }}>
+            <Fold title="Market input" hint={`${pairLabel} · ${tfMismatch ? nativeTf : tradeTf}`} open={folds.market} onToggle={() => toggleFold("market")}>
               <label><span className="lbl">Currency pair</span>
                 <select value={pair} onChange={(e) => setPair(e.target.value)}>{PAIRS.map((p) => <option key={p}>{p}</option>)}</select>
               </label>
@@ -1330,93 +1679,131 @@ export default function ForexAnalyzer() {
                 <div className="row" style={{ gap: 5 }}>{TFS.map((t) => <button key={t} className="tf" data-on={htfTf === t ? "1" : "0"} onClick={() => setHtfTf(t)}>{t}</button>)}</div>
               </div>
               <p className="note mt">The higher timeframe sets the context you trade with or against. The trading timeframe is where you read structure and levels.</p>
-            </Card>
+            </Fold>
 
-            <Card title="Chart input">
-              <div className="lbl">1 · Paste OHLC candles</div>
-              <textarea rows={5} value={paste} onChange={(e) => setPaste(e.target.value)}
-                placeholder={"One candle per line, oldest first.\nopen,high,low,close\nor date,open,high,low,close,volume\n\n1.0812,1.0834,1.0808,1.0829\n1.0829,1.0841,1.0822,1.0836"} />
-              <div className="row mt" style={{ gap: 8 }}>
-                <button className="btn primary" onClick={loadPaste} disabled={!paste.trim()}>Load candles</button>
-                {source === "user" && <button className="btn" onClick={() => { setSource("illustrative"); setUserCandles(null); setParseErrors([]); }}>Back to sample data</button>}
+            {/* One source at a time: the controls for the other two stay out of the way. */}
+            <Card title="Data source" right={<SourceTag source={source} />}>
+              <div className="seg">
+                {SRC_TABS.map(([k, l]) => (
+                  <button key={k} data-on={srcTab === k ? "1" : "0"} onClick={() => setSrcTab(srcTab === k ? null : k)}>{l}</button>
+                ))}
               </div>
-              {source === "user" && (
-                <label className="mt"><span className="lbl">Timeframe of the pasted candles</span>
-                  <select value={dataTf} onChange={(e) => setDataTf(e.target.value)}>{TFS.map((t) => <option key={t}>{t}</option>)}</select>
-                </label>
-              )}
-              {parseErrors.length > 0 && (
-                <div className="mt"><Warn level="high"><b>Could not read every line.</b><ul style={{ margin: "6px 0 0 16px", padding: 0 }}>{parseErrors.map((e, i) => <li key={i}>{e}</li>)}</ul></Warn></div>
-              )}
 
-              <div className="hr" />
-              <div className="lbl">2 · Chart screenshot</div>
-              <input type="file" accept="image/*" onChange={onImage} style={{ padding: 6 }} />
-              {imageNote && (
-                <div className="mt"><Warn level="high">
-                  <b>Insufficient chart information — upload a clearer chart or provide OHLC data.</b>
-                  <p className="mt" style={{ fontSize: 12.5 }}>Received <span className="mono">{imageNote}</span>. This tool reads numbers, not pictures: it cannot measure prices off an image, so it will not guess a pair, a price, or a level from one. Export the candles from your platform and paste them above, and every level on this page becomes measurable instead of estimated.</p>
-                </Warn></div>
-              )}
-
-              <div className="hr" />
-              <div className="lbl">3 · Live feed</div>
-              <div className="grid" style={{ gap: 9, gridTemplateColumns: "1fr 1fr" }}>
-                <label><span className="lbl">Provider</span>
-                  <select value={live.provider} onChange={(e) => setLive((s) => ({ ...s, provider: e.target.value, error: null }))}>
-                    {Object.entries(PROVIDERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </label>
-                <label><span className="lbl">Bars to pull</span>
-                  <input type="number" min="50" max="5000" value={live.bars} onChange={(e) => setLive((s) => ({ ...s, bars: e.target.value }))} />
-                </label>
-              </div>
-              {!PROVIDERS[live.provider].serverSide && (
-                <label className="mt"><span className="lbl">API key</span>
-                  <input type="password" value={live.key} placeholder="paste your key" autoComplete="off"
-                    onChange={(e) => setLive((s) => ({ ...s, key: e.target.value, error: null }))} />
-                </label>
-              )}
-              <p className="note" style={{ marginTop: 5, fontSize: 11.5 }}>{PROVIDERS[live.provider].keyHint}{!PROVIDERS[live.provider].serverSide && <> Free key from {PROVIDERS[live.provider].site}. The key stays in this page's memory only — it is never saved, and never leaves your browser except in the request to {PROVIDERS[live.provider].label}.</>}</p>
-              <div className="row mt" style={{ gap: 8 }}>
-                <button className="btn primary" onClick={runFetch} disabled={live.status === "loading"}>
-                  {live.status === "loading" ? "Fetching…" : source === "live" ? "Refresh" : `Fetch ${pairLabel} ${tradeTf}`}
-                </button>
-                {source === "live" && <button className="btn" onClick={() => { setSource("illustrative"); setAuto(0); }}>Disconnect</button>}
-              </div>
-              {source === "live" && (
-                <div className="row mt" style={{ gap: 5 }}>
-                  <span className="lbl" style={{ margin: 0 }}>Auto-refresh</span>
-                  {[[0, "Off"], [60, "60s"], [300, "5m"], [900, "15m"]].map(([v, l]) => (
-                    <button key={v} className="tf" data-on={auto === v ? "1" : "0"} onClick={() => setAuto(v)}>{l}</button>
-                  ))}
+              {source === "live" && live.fetchedAt && (
+                <div className="row mt" style={{ gap: 7 }}>
+                  <span className="tag" style={{ color: isStale ? T.warn : T.bull, borderColor: (isStale ? T.warn : T.bull) + "55" }}>
+                    {live.candles.length} {live.tf} bars · {new Date(live.fetchedAt).toLocaleTimeString()}
+                  </span>
+                  <button className="btn" onClick={runFetch} disabled={live.status === "loading"}>{live.status === "loading" ? "Fetching…" : "Refresh"}</button>
+                  <button className="btn" onClick={() => { setSource("illustrative"); setAuto(0); }}>Disconnect</button>
                 </div>
               )}
-              {auto > 0 && <p className="note" style={{ marginTop: 6, fontSize: 11.5 }}>Each refresh spends one API call. On a free tier of a few calls per minute, 60s is close to the limit if you are also using the key elsewhere.</p>}
-              {live.error && (
-                <div className="mt"><Warn level={live.error.startsWith("BLOCKED") ? "med" : "high"}>
-                  {live.error.startsWith("BLOCKED") ? <><b>Blocked by the sandbox.</b> {live.error.replace("BLOCKED: ", "")}</> : <><b>Fetch failed.</b> {live.error}</>}
-                </Warn></div>
+              {source === "user" && userCandles && (
+                <div className="row mt" style={{ gap: 7 }}>
+                  <span className="tag" style={{ color: T.info, borderColor: T.info + "55" }}>{userCandles.length} pasted {dataTf} bars</span>
+                  <button className="btn" onClick={() => { setSource("illustrative"); setUserCandles(null); setParseErrors([]); }}>Back to sample data</button>
+                </div>
               )}
-              {source === "live" && live.status === "ok" && (
-                <div className="mt"><Warn level="info"><b>Connected.</b> {live.candles.length} {live.tf} candles for {live.symbol} from {PROVIDERS[live.provider].label}, last close {last(live.candles).c.toFixed(digits)}. Everything on this page now recomputes from that series.</Warn></div>
-              )}
-              <p className="note mt" style={{ fontSize: 11.5 }}>The data layer accepts <span className="mono">{"{symbol, timeframe, candles:[{t,o,h,l,c,v}]}"}</span>, so any provider returning OHLC can be added the same way. The badge at the top always states which of the three sources you are looking at.</p>
 
-              {source === "illustrative" && (
+              {srcTab === null && (
                 <>
-                  <div className="hr" />
-                  <div className="row" style={{ justifyContent: "space-between" }}>
-                    <span className="lbl" style={{ margin: 0 }}>Sample series</span>
-                    <button className="btn" onClick={() => setSeedNum((s) => s + 1)}>New sample</button>
-                  </div>
-                  <p className="note mt">Generates a different synthetic series so you can practise reading structure on charts you have not seen.</p>
+                  <p className="note mt">
+                    {source === "illustrative"
+                      ? "Running on illustrative sample data. Pick a source above to load real candles — the chart and every reading recompute from whatever you load."
+                      : "Source controls are collapsed. Pick a tab above to change how data is loaded."}
+                  </p>
+                  {source === "illustrative" && (
+                    <div className="row mt" style={{ gap: 7 }}>
+                      <button className="btn" onClick={() => setSeedNum((s) => s + 1)}>New sample series</button>
+                      <span className="note" style={{ fontSize: 11.5 }}>a different synthetic series to practise on</span>
+                    </div>
+                  )}
                 </>
+              )}
+
+              {srcTab === "paste" && (
+                <div className="mt">
+                  <div className="lbl">Paste OHLC candles</div>
+                  <textarea rows={5} value={paste} onChange={(e) => setPaste(e.target.value)}
+                    placeholder={"One candle per line, oldest first.\nopen,high,low,close\nor date,open,high,low,close,volume\n\n1.0812,1.0834,1.0808,1.0829\n1.0829,1.0841,1.0822,1.0836"} />
+                  <div className="row mt" style={{ gap: 8 }}>
+                    <button className="btn primary" onClick={loadPaste} disabled={!paste.trim()}>Load candles</button>
+                  </div>
+                  {source === "user" && (
+                    <label className="mt"><span className="lbl">Timeframe of the pasted candles</span>
+                      <select value={dataTf} onChange={(e) => setDataTf(e.target.value)}>{TFS.map((t) => <option key={t}>{t}</option>)}</select>
+                    </label>
+                  )}
+                  {parseErrors.length > 0 && (
+                    <div className="mt"><Warn level="high"><b>Could not read every line.</b><ul style={{ margin: "6px 0 0 16px", padding: 0 }}>{parseErrors.map((e, i) => <li key={i}>{e}</li>)}</ul></Warn></div>
+                  )}
+                </div>
+              )}
+
+              {srcTab === "image" && (
+                <div className="mt">
+                  <div className="lbl">Chart screenshot</div>
+                  <input type="file" accept="image/*" onChange={onImage} style={{ padding: 6 }} />
+                  {imageNote ? (
+                    <div className="mt"><Warn level="high">
+                      <b>Insufficient chart information — upload a clearer chart or provide OHLC data.</b>
+                      <p className="mt" style={{ fontSize: 12.5 }}>Received <span className="mono">{imageNote}</span>. This tool reads numbers, not pictures: it cannot measure prices off an image, so it will not guess a pair, a price, or a level from one. Export the candles from your platform and paste them instead, and every level on this page becomes measurable rather than estimated.</p>
+                    </Warn></div>
+                  ) : (
+                    <p className="note mt">An image is accepted only to tell you what it cannot do: nothing on this page is ever measured off a picture.</p>
+                  )}
+                </div>
+              )}
+
+              {srcTab === "live" && (
+                <div className="mt">
+                  <div className="grid" style={{ gap: 9, gridTemplateColumns: "1fr 1fr" }}>
+                    <label><span className="lbl">Provider</span>
+                      <select value={live.provider} onChange={(e) => setLive((s) => ({ ...s, provider: e.target.value, error: null }))}>
+                        {Object.entries(PROVIDERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      </select>
+                    </label>
+                    <label><span className="lbl">Bars to pull</span>
+                      <input type="number" min="50" max="5000" value={live.bars} onChange={(e) => setLive((s) => ({ ...s, bars: e.target.value }))} />
+                    </label>
+                  </div>
+                  {!PROVIDERS[live.provider].serverSide && (
+                    <label className="mt"><span className="lbl">API key</span>
+                      <input type="password" value={live.key} placeholder="paste your key" autoComplete="off"
+                        onChange={(e) => setLive((s) => ({ ...s, key: e.target.value, error: null }))} />
+                    </label>
+                  )}
+                  <p className="note" style={{ marginTop: 5, fontSize: 11.5 }}>{PROVIDERS[live.provider].keyHint}{!PROVIDERS[live.provider].serverSide && <> Free key from {PROVIDERS[live.provider].site}. The key stays in this page's memory only — it is never saved, and never leaves your browser except in the request to {PROVIDERS[live.provider].label}.</>}</p>
+                  <div className="row mt" style={{ gap: 8 }}>
+                    <button className="btn primary" onClick={runFetch} disabled={live.status === "loading"}>
+                      {live.status === "loading" ? "Fetching…" : source === "live" ? "Refresh" : `Fetch ${pairLabel} ${tradeTf}`}
+                    </button>
+                  </div>
+                  {source === "live" && (
+                    <div className="row mt" style={{ gap: 5 }}>
+                      <span className="lbl" style={{ margin: 0 }}>Auto-refresh</span>
+                      {[[0, "Off"], [60, "60s"], [300, "5m"], [900, "15m"]].map(([v, l]) => (
+                        <button key={v} className="tf" data-on={auto === v ? "1" : "0"} onClick={() => setAuto(v)}>{l}</button>
+                      ))}
+                    </div>
+                  )}
+                  {auto > 0 && <p className="note" style={{ marginTop: 6, fontSize: 11.5 }}>Each refresh spends one API call. On a free tier of a few calls per minute, 60s is close to the limit if you are also using the key elsewhere.</p>}
+                  {live.error && (
+                    <div className="mt"><Warn level={live.error.startsWith("BLOCKED") ? "med" : "high"}>
+                      {live.error.startsWith("BLOCKED") ? <><b>Blocked by the sandbox.</b> {live.error.replace("BLOCKED: ", "")}</> : <><b>Fetch failed.</b> {live.error}</>}
+                    </Warn></div>
+                  )}
+                  {source === "live" && live.status === "ok" && (
+                    <div className="mt"><Warn level="info"><b>Connected.</b> {live.candles.length} {live.tf} candles for {live.symbol} from {PROVIDERS[live.provider].label}, last close {last(live.candles).c.toFixed(digits)}. Everything on this page now recomputes from that series.</Warn></div>
+                  )}
+                  <p className="note mt" style={{ fontSize: 11.5 }}>The data layer accepts <span className="mono">{"{symbol, timeframe, candles:[{t,o,h,l,c,v}]}"}</span>, so any provider returning OHLC can be added the same way.</p>
+                </div>
               )}
             </Card>
 
             {quality && (
-              <Card title="Analysis quality" right={<Pill tone={quality.level === "High" ? "bull" : quality.level === "Medium" ? "warn" : "bear"} solid>{quality.level}</Pill>}>
+              <Fold title="Analysis quality" open={folds.quality} onToggle={() => toggleFold("quality")}
+                right={<Pill tone={quality.level === "High" ? "bull" : quality.level === "Medium" ? "warn" : "bear"} solid>{quality.level}</Pill>}>
                 <div className="ledger">
                   {quality.pts.map((p, i) => (
                     <div className="led" key={i}>
@@ -1428,12 +1815,12 @@ export default function ForexAnalyzer() {
                 {quality.level !== "High" && (
                   <p className="note mt">Analysis confidence is {quality.level.toLowerCase()} because {quality.pts.filter((p) => !p.ok).length} of the {quality.max} evidence checks are not met. Treat every reading below as provisional.</p>
                 )}
-              </Card>
+              </Fold>
             )}
           </div>
 
           {/* --------------------------------- MAIN ---------------------------------- */}
-          <div className="grid" style={{ gap: 14 }}>
+          <div className="grid main" style={{ gap: 14 }}>
             {!a && <Card title="Not enough data"><p className="note">At least 30 candles are needed before structure, indicators or zones can be computed. Load more data.</p></Card>}
 
             {a && tab === "analyzer" && <AnalyzerTab {...{ a, led, bias, status, htf, ladder, digits, layers, setLayers, scenarioLines, openWhy, setOpenWhy, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, htfTf, scen, source, verdict }} />}
@@ -1517,12 +1904,13 @@ function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLay
         </div>
       </Card>
 
-      <Card title="Annotated chart" right={<span className="tag">last {Math.min(a.candles.length, 150)} bars</span>}>
+      <Card title="Annotated chart" right={<span className="tag">{a.candles.length} bars loaded</span>}>
         <div className="row" style={{ gap: 5, marginBottom: 10 }}>
+          <span className="lbl" style={{ margin: 0 }}>Layers</span>
           {L("structure", "Structure")}{L("sr", "S/R zones")}{L("fvg", "FVG")}{L("sd", "Supply/demand")}{L("liquidity", "Liquidity")}{L("ema", "EMAs")}{L("scenario", "Scenario levels")}
         </div>
         <ChartPanel a={a} digits={digits} layers={layers} scenarioLines={scenarioLines} />
-        <p className="note mt">Labels are placed only where the data supports them: HH/HL/LH/LL come from confirmed swing pivots, BOS and CHOCH from candle closes through a prior swing, and zones from clustered pivot prices. Nothing is drawn by hand.</p>
+        <p className="note mt">Labels are placed only where the data supports them: HH/HL/LH/LL come from confirmed swing pivots, BOS and CHOCH from candle closes through a prior swing, and zones from clustered pivot prices. Nothing is drawn by hand. RSI, MACD and volume read off the same candles as the price panel — switch them on above the chart.</p>
       </Card>
 
       <Card title="Analysis breakdown">
