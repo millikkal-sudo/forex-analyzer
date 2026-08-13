@@ -126,6 +126,8 @@ const CSS = `
 .tag{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid var(--line);color:var(--dim)}
 .hr{height:1px;background:var(--line);margin:13px 0}
 .g2{grid-template-columns:1fr 1fr}
+ul.tight{margin:7px 0 0 17px;padding:0;font-size:13px;line-height:1.6}
+ul.tight li{margin-bottom:4px}
 .g3{grid-template-columns:repeat(3,1fr)}
 .g4{grid-template-columns:repeat(4,1fr)}
 .sidebyside{display:grid;grid-template-columns:320px 1fr;gap:14px;align-items:start}
@@ -1481,15 +1483,14 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
 
 /* ------------------------------------------------- navigation, by workflow -- */
 const NAV_GROUPS = [
-  { stage: "1 · Read", items: [["analyzer", "Analyzer", "analyzer"], ["structure", "Structure", "structure"]] },
-  { stage: "2 · Plan", items: [["scenarios", "Scenarios", "scenarios"], ["risk", "Risk", "risk"]] },
-  { stage: "3 · Review", items: [["learn", "Learn", "learn"], ["journal", "Journal", "journal"]] },
+  { stage: "Decide", items: [["desk", "Trade desk", "scenarios"], ["chart", "Chart", "analyzer"]] },
+  { stage: "Detail", items: [["detail", "Breakdown", "learn"], ["risk", "Risk calc", "risk"], ["journal", "Journal", "journal"]] },
 ];
 const SRC_TABS = [["paste", "Paste OHLC"], ["image", "Screenshot"], ["live", "Live feed"]];
 
 /* ================================ MAIN APP ================================= */
 export default function ForexAnalyzer() {
-  const [tab, setTab] = useState("analyzer");
+  const [tab, setTab] = useState("desk");
   const [pair, setPair] = useState("EUR/USD");
   const [customPair, setCustomPair] = useState("");
   const [tradeTf, setTradeTf] = useState("1H");
@@ -1624,7 +1625,7 @@ export default function ForexAnalyzer() {
               {verdict.invalidation && <span className="sigfld"><span>Invalidation</span><b style={{ color: T.warn }}>{verdict.invalidation}</b></span>}
               <span className="sigfld"><span>Structure</span><b style={{ color: verdict.ev ? (verdict.ev.dir === "up" ? T.bull : T.bear) : T.dim }}>{verdict.ev ? `${verdict.ev.kind} ${verdict.ev.dir}` : "no BOS"}</b></span>
               <span className="sigfld"><span>Open FVG</span><b style={{ color: a && a.fvg.zones.some((z) => z.inside) ? T.warn : T.dim }}>{a ? a.fvg.zones.length : 0}{a && a.fvg.zones.some((z) => z.inside) ? " · in one" : ""}</b></span>
-              <button className="why" style={{ marginLeft: "auto" }} onClick={() => { setTab("analyzer"); setOpenWhy(openWhy === "verdict" ? null : "verdict"); }}>WHY?</button>
+              <button className="why" style={{ marginLeft: "auto" }} onClick={() => { setTab("desk"); setOpenWhy(openWhy === "verdict" ? null : "verdict"); }}>WHY?</button>
             </div>
           </div>
         )}
@@ -1823,11 +1824,10 @@ export default function ForexAnalyzer() {
           <div className="grid main" style={{ gap: 14 }}>
             {!a && <Card title="Not enough data"><p className="note">At least 30 candles are needed before structure, indicators or zones can be computed. Load more data.</p></Card>}
 
-            {a && tab === "analyzer" && <AnalyzerTab {...{ a, led, bias, status, htf, ladder, digits, layers, setLayers, scenarioLines, openWhy, setOpenWhy, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, htfTf, scen, source, verdict }} />}
-            {a && tab === "structure" && <StructureTab {...{ a, digits, openWhy, setOpenWhy, ladder, htfTf, tradeTf: tfMismatch ? nativeTf : tradeTf }} />}
-            {a && tab === "scenarios" && <ScenariosTab {...{ a, led, scen, digits, checks, toggleCheck, openWhy, setOpenWhy, status, htf }} />}
+            {a && tab === "desk" && <DeskTab {...{ a, led, bias, status, scen, verdict, digits, htf, pair, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, checks, toggleCheck, openWhy, setOpenWhy, setTab }} />}
+            {a && tab === "chart" && <ChartTab {...{ a, digits, layers, setLayers, scenarioLines, ladder, htfTf, tradeTf: tfMismatch ? nativeTf : tradeTf, openWhy, setOpenWhy }} />}
+            {a && tab === "detail" && <DetailTab {...{ a, led, scen, bias, status, ladder, htf, digits, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, htfTf, openWhy, setOpenWhy, teach, setTeach, source }} />}
             {a && tab === "risk" && <RiskTab {...{ a, scen, digits, pair, pairLabel, events, setEvents, eventDraft, setEventDraft }} />}
-            {a && tab === "learn" && <LearnTab {...{ a, led, scen, bias, status, ladder, htf, digits, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, htfTf, teach, setTeach, source }} />}
             {tab === "journal" && <JournalTab {...{ pairLabel, tradeTf, digits }} />}
           </div>
         </div>
@@ -1840,98 +1840,235 @@ export default function ForexAnalyzer() {
   );
 }
 
-/* ============================== ANALYZER TAB =============================== */
-function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLayers, scenarioLines, openWhy, setOpenWhy, pairLabel, tradeTf, htfTf, scen, source, verdict }) {
-  const rows = [
-    ["Higher timeframe", htf?.available ? htf.read : "Unavailable", htf?.available ? `The ${htf.tf} series built from this data reads ${htf.structure.toLowerCase()} structure with ${htf.strength.toLowerCase()} trend strength.` : `A ${htfTf} series cannot be built from the loaded data (${htf?.reason || "unavailable"}).`],
-    ["Market structure", a.structRead, a.structure.detail],
-    ["Momentum", a.momentumRead, `MACD reads ${a.macdRead.toLowerCase()} and RSI reads ${a.rsiRead.toLowerCase()}. This row only leaves neutral when both agree.`],
-    ["Moving averages", a.maRead, a.maWhy],
-    ["RSI", a.rsiRead, `RSI(14) is ${a.rsiVal != null ? a.rsiVal.toFixed(1) : "unavailable"} — ${a.rsiState.toLowerCase()}. A high RSI in a strong trend is a sign of strength, not an automatic sell; it can stay above 70 for a long time.`],
-    ["MACD", a.macdRead, a.macdWhy],
-    ["Support / resistance", a.srRead, a.srWhy],
-    ["Liquidity", a.liq.sweep ? "Relevant" : "Neutral", a.liq.sweep ? `A bar in the last 12 traded through ${a.liq.sweep.level.kind.toLowerCase()} at ${a.liq.sweep.level.price.toFixed(digits)} and closed back inside. Orders resting there were reached. That is information, not a reversal signal.` : "No mapped liquidity level has been swept in the last 12 bars."],
-    ["Volatility", a.volatility, `ATR(14) is ${a.atr.toFixed(digits)}, which is ${a.atrPct.toFixed(2)}% of price and sits in the ${a.volatility.toLowerCase()} part of its own recent range. This is the number your stop distance should be measured against.`],
-  ];
-  const L = (k, label) => (
-    <button key={k} className="tf" data-on={layers[k] ? "1" : "0"} onClick={() => setLayers((s) => ({ ...s, [k]: !s[k] }))}>{label}</button>
+/* =============================== PAGE TABS ================================= */
+/* ---------------------------------------------------------- shared helpers -- */
+/** Entry / stop / targets for one direction, built only from mapped references. */
+function buildSetup(a, led, scen, dir) {
+  const s = dir === "bull" ? scen.bullish : scen.bearish;
+  const entryZone = dir === "bull" ? a.sr.sup[0] : a.sr.res[0];
+  const pivot = [...a.pivots].reverse().find((x) => (dir === "bull" ? x.type === "L" : x.type === "H"));
+  if (!entryZone || !pivot) return null;
+  const entry = entryZone.mid;
+  const stop = dir === "bull" ? Math.min(pivot.price, entryZone.lo) - a.atr * 0.3 : Math.max(pivot.price, entryZone.hi) + a.atr * 0.3;
+  const t1v = s.targets[0] ? parseFloat(String(s.targets[0].v).split("–")[0]) : null;
+  const t2v = s.targets[1] ? parseFloat(String(s.targets[1].v).split("–")[0]) : null;
+  const rr1 = t1v != null ? Math.abs(t1v - entry) / Math.abs(entry - stop) : null;
+  const rr2 = t2v != null ? Math.abs(t2v - entry) / Math.abs(entry - stop) : null;
+  return { dir, entry, stop, t1v, t2v, rr1, rr2, entryZone, pivot };
+}
+
+function ScenarioBody({ s, digits }) {
+  return (
+    <div className="grid g2" style={{ gap: 16 }}>
+      <div>
+        <div className="eyebrow">What has to happen</div>
+        <ul className="tight">{s.condition.map((x, i) => <li key={i}>{x}</li>)}</ul>
+        <div className="eyebrow" style={{ marginTop: 13 }}>What confirms it</div>
+        <ul className="tight">{s.confirmation.map((x, i) => <li key={i}>{x}</li>)}</ul>
+      </div>
+      <div>
+        <div className="eyebrow">Target areas</div>
+        {s.targets.length ? (
+          <table className="tbl" style={{ marginTop: 6 }}>
+            <tbody>{s.targets.map((t, i) => (
+              <tr key={i}><td style={{ width: 118 }}>{t.label}</td><td className="num">{t.v}</td><td className="note">{t.note}</td></tr>
+            ))}</tbody>
+          </table>
+        ) : <p className="note mt">No target area could be mapped this way. Trading toward an unmapped area gives you no basis for where to take profit.</p>}
+        <div className="mt"><Warn level="med"><b>Invalidation.</b> {s.invalidation}</Warn></div>
+      </div>
+    </div>
   );
+}
+
+/* ================================ TRADE DESK ===============================
+   One page for the decision: buy or sell or wait, how strong the case is on
+   each side, the two scenarios, and the numbers that follow from them. Every
+   long explanation lives on the Breakdown tab instead. */
+function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, pair, pairLabel, tradeTf, checks, toggleCheck, openWhy, setOpenWhy, setTab }) {
+  const favoured = led.bull === led.bear ? (verdict && verdict.side ? verdict.side : "bull") : led.bull > led.bear ? "bull" : "bear";
+  const [scTab, setScTab] = useState(favoured);
+  const [chkSide, setChkSide] = useState(favoured);
+  const [openChk, setOpenChk] = useState(false);
+  const [f, setF] = useState({ balance: 10000, riskPct: 1 });
+
+  // Follow the data: if the evidence flips sides, the page flips with it.
+  useEffect(() => { setScTab(favoured); setChkSide(favoured); }, [favoured]);
+
+  const dir = scTab === "none" ? favoured : scTab;
+  const setup = useMemo(() => buildSetup(a, led, scen, dir), [a, led, scen, dir]);
+  const money = setup && setup.t1v != null
+    ? riskCalc({ balance: nz(Number(f.balance)), riskPct: nz(Number(f.riskPct)), entry: setup.entry, stop: setup.stop, target: setup.t1v, pairKey: pair, atr: a.atr })
+    : null;
+
+  const list = chkSide === "bull" ? BULL_CHECKS : BEAR_CHECKS;
+  const done = list.filter(([k]) => checks[k]).length;
+  const SC = [["bull", "Bullish", T.bull], ["bear", "Bearish", T.bear], ["none", "No trade", T.warn]];
 
   return (
     <>
-      {verdict && (
-        <Card accent={toneColor(verdict.tone)} title="Directional read" right={<Pill tone={verdict.tone} solid>{verdict.score} vs {verdict.against}</Pill>}>
-          <h2 style={{ fontSize: 27, color: toneColor(verdict.tone), lineHeight: 1.1 }}>{verdict.action}</h2>
-          <p className="note mt" style={{ fontSize: 13 }}>{verdict.reason}</p>
-          <div className="grid g3 mt" style={{ gap: 10 }}>
-            <Stat label="Trigger — not yet met" value={verdict.trigger} tone={verdict.tone} />
-            <Stat label="Invalidation" value={verdict.invalidation || "—"} tone="warn" sub={verdict.side ? `a close past this ends the ${verdict.side === "bull" ? "bullish" : "bearish"} case` : "nothing to invalidate"} />
-            <Stat label="Volatility check" value={`${a.atr.toFixed(digits)} ATR`} sub={`${a.volatility.toLowerCase()} — size the stop against this`} />
-          </div>
-          {verdict.blockers.length > 0 && (
-            <div className="mt"><Warn level="med"><b>Working against it.</b><ul style={{ margin: "6px 0 0 16px", padding: 0 }}>{verdict.blockers.map((b, i) => <li key={i} style={{ marginBottom: 3 }}>{b}</li>)}</ul></Warn></div>
-          )}
-          <div className="mt"><Why id="verdict" open={openWhy} setOpen={setOpenWhy}>
-            The word "potential" is doing real work here. This is a reading of what the loaded candles currently favour, produced by counting agreeing evidence — it is not a forecast, and the score has never been tested against outcomes. The trigger is the thing that has not happened yet: until that close prints, the read is a hypothesis. The invalidation is the price at which the reasoning above stops being true, which is why it is quoted next to the direction rather than buried three tabs away.
-          </Why></div>
-        </Card>
-      )}
-
-      <Card accent={toneColor(bias.tone)}>
-        <div className="spread" style={{ flexWrap: "wrap" }}>
-          <div>
-            <div className="eyebrow">Overall market bias · {pairLabel} · {tradeTf}</div>
-            <h1 style={{ fontSize: 40, lineHeight: 1.05, marginTop: 6, color: toneColor(bias.tone) }}>{bias.state}</h1>
-            <div className="row mt" style={{ gap: 8 }}>
-              <Pill tone={bias.tone}>Trend strength {a.strength}</Pill>
+      {/* ------------------------------- the call -------------------------------- */}
+      <Card accent={toneColor(verdict ? verdict.tone : bias.tone)}>
+        <div className="spread" style={{ flexWrap: "wrap", gap: 18 }}>
+          <div style={{ minWidth: 240, flex: "1 1 260px" }}>
+            <div className="eyebrow">Decision · {pairLabel} · {tradeTf}</div>
+            <h1 style={{ fontSize: 38, lineHeight: 1.05, marginTop: 6, color: toneColor(verdict ? verdict.tone : bias.tone) }}>
+              {verdict ? verdict.action : bias.state}
+            </h1>
+            <div className="row mt" style={{ gap: 7 }}>
+              <Pill tone={bias.tone} solid>{bias.state}</Pill>
               <Pill tone={status.tone}>{status.icon} {status.text}</Pill>
+              <Pill tone={bias.tone}>Trend {a.strength}</Pill>
             </div>
           </div>
-          <div style={{ minWidth: 230, flex: "1 1 230px" }}>
-            <div className="spread"><span className="lbl" style={{ margin: 0 }}>Bullish confluence</span><span className="mono" style={{ color: T.bull, fontWeight: 600 }}>{led.bull}/8</span></div>
+          <div style={{ minWidth: 230, flex: "1 1 240px" }}>
+            <div className="spread"><span className="lbl" style={{ margin: 0 }}>Bullish evidence</span><span className="mono" style={{ color: T.bull, fontWeight: 600 }}>{led.bull}/8</span></div>
             <Bar value={led.bull} max={8} color={T.bull} />
-            <div className="spread" style={{ marginTop: 9 }}><span className="lbl" style={{ margin: 0 }}>Bearish confluence</span><span className="mono" style={{ color: T.bear, fontWeight: 600 }}>{led.bear}/8</span></div>
+            <div className="spread" style={{ marginTop: 9 }}><span className="lbl" style={{ margin: 0 }}>Bearish evidence</span><span className="mono" style={{ color: T.bear, fontWeight: 600 }}>{led.bear}/8</span></div>
             <Bar value={led.bear} max={8} color={T.bear} />
-            <p className="note" style={{ marginTop: 8, fontSize: 11.5 }}>Technical Confluence Score — a count of agreeing evidence, not a probability. It has not been statistically validated against outcomes.</p>
+            <button className="why" style={{ marginTop: 9 }} onClick={() => setTab("detail")}>SEE THE 8 POINTS →</button>
           </div>
         </div>
-        <div style={{ marginTop: 12 }}>
-          <Why id="bias" open={openWhy} setOpen={setOpenWhy}>
-            {bias.state === "NO CLEAR SETUP"
-              ? `Neither side reaches three points on the ledger (bull ${led.bull}, bear ${led.bear}). The components that would carry weight — structure, higher timeframe, EMA order — are not lining up in either direction, so there is no case to argue.`
-              : `The ledger reads ${led.bull} bullish against ${led.bear} bearish. ${a.structure.detail} ${a.maWhy} ${htf?.available ? `The ${htf.tf} timeframe reads ${htf.read.toLowerCase()}.` : ""} Bias describes what the evidence currently favours; it says nothing about the next candle.`}
-          </Why>
+
+        {verdict && (
+          <>
+            <div className="grid g3 mt" style={{ gap: 10 }}>
+              <Stat label="Trigger — not yet met" value={verdict.trigger} tone={verdict.tone} />
+              <Stat label="Invalidation" value={verdict.invalidation || "—"} tone="warn" sub={verdict.side ? `a close past this ends the ${verdict.side === "bull" ? "bullish" : "bearish"} case` : "nothing to invalidate"} />
+              <Stat label="Volatility" value={`${a.atr.toFixed(digits)} ATR`} sub={`${a.volatility.toLowerCase()} — size the stop against this`} />
+            </div>
+            <p className="note mt" style={{ fontSize: 13 }}>{verdict.reason}</p>
+            {verdict.blockers.length > 0 && (
+              <div className="mt"><Warn level="med"><b>Working against it.</b>
+                <ul style={{ margin: "6px 0 0 16px", padding: 0 }}>{verdict.blockers.map((b, i) => <li key={i} style={{ marginBottom: 3 }}>{b}</li>)}</ul>
+              </Warn></div>
+            )}
+            <div className="mt"><Why id="verdict" open={openWhy} setOpen={setOpenWhy}>
+              "Potential" is doing real work here. This counts agreeing evidence in the loaded candles — it is not a forecast and has never been tested against outcomes. Until the trigger price closes, the read is a hypothesis; the invalidation is where the reasoning stops being true.
+            </Why></div>
+          </>
+        )}
+      </Card>
+
+      {/* ------------------------------ scenarios -------------------------------- */}
+      <Card title="Scenarios" right={
+        <span className="tag">{scTab === "none" ? (scen.noTrade.active ? "conditions met" : "not indicated") : `${scTab === "bull" ? led.bull : led.bear}/8 evidence`}</span>
+      }>
+        <div className="seg">
+          {SC.map(([k, l, col]) => (
+            <button key={k} data-on={scTab === k ? "1" : "0"} onClick={() => setScTab(k)}
+              style={scTab === k ? { background: col, color: T.ink } : undefined}>
+              {l}{k !== "none" ? ` ${k === "bull" ? led.bull : led.bear}/8` : scen.noTrade.active ? " ●" : ""}
+            </button>
+          ))}
+        </div>
+        <div className="mt">
+          {scTab === "bull" && <ScenarioBody s={scen.bullish} digits={digits} />}
+          {scTab === "bear" && <ScenarioBody s={scen.bearish} digits={digits} />}
+          {scTab === "none" && (
+            scen.noTrade.checks.length === 0 ? (
+              <p className="note">None of the standard stand-aside conditions are present. That is not permission to trade — only that the obvious reasons to wait are absent.</p>
+            ) : (
+              <>
+                <p style={{ fontSize: 14, marginBottom: 9 }}>{scen.noTrade.active ? "The honest read here is: no clear setup — wait." : "Some stand-aside conditions are present. They weaken any case without cancelling it."}</p>
+                <div className="ledger">
+                  {scen.noTrade.checks.map((c, i) => (
+                    <div className="led" key={i}><span className="dot" style={{ background: T.warn }} /><span>{c.text}</span><span /></div>
+                  ))}
+                </div>
+              </>
+            )
+          )}
         </div>
       </Card>
 
+      {/* ------------------------------ the numbers ------------------------------ */}
+      <Card title={`Plan — ${dir === "bull" ? "buy" : "sell"} side`} accent={dir === "bull" ? T.bull : T.bear}
+        right={<span className="tag">from mapped levels only</span>}>
+        {!setup ? (
+          <p className="note">No plan can be built this way: the data does not give both an entry reference (a mapped zone in this direction) and a structural stop location. Rather than invent numbers, the tool stops here.</p>
+        ) : (
+          <>
+            <div className="grid g4" style={{ gap: 10 }}>
+              <Stat label="Entry zone" value={`${setup.entryZone.lo.toFixed(digits)} – ${setup.entryZone.hi.toFixed(digits)}`} tone={dir === "bull" ? "bull" : "bear"} sub={`${setup.entryZone.name} · ${setup.entryZone.touches} reactions`} />
+              <Stat label="Stop-loss" value={setup.stop.toFixed(digits)} tone="warn" sub={`past the ${dir === "bull" ? "higher low" : "lower high"} at ${setup.pivot.price.toFixed(digits)}`} />
+              <Stat label="Target 1" value={setup.t1v != null ? setup.t1v.toFixed(digits) : "none mapped"} sub={setup.rr1 != null ? `${setup.rr1.toFixed(2)}:1 reward-to-risk` : "no mapped area"} />
+              <Stat label="Target 2" value={setup.t2v != null ? setup.t2v.toFixed(digits) : "none mapped"} sub={setup.rr2 != null ? `${setup.rr2.toFixed(2)}:1` : ""} />
+            </div>
+            <div className="hr" />
+            <div className="row" style={{ gap: 10, alignItems: "flex-end" }}>
+              <label style={{ width: 130 }}><span className="lbl">Account balance</span>
+                <input type="number" value={f.balance} onChange={(e) => setF((s) => ({ ...s, balance: e.target.value }))} />
+              </label>
+              <label style={{ width: 96 }}><span className="lbl">Risk %</span>
+                <input type="number" step="0.1" value={f.riskPct} onChange={(e) => setF((s) => ({ ...s, riskPct: e.target.value }))} />
+              </label>
+              <button className="why" onClick={() => setTab("risk")}>FULL RISK CALCULATOR →</button>
+            </div>
+            {money && (
+              <>
+                <div className="grid g4 mt" style={{ gap: 10 }}>
+                  <Stat label="Risk on this trade" value={`${money.risk.toFixed(2)}`} sub={`${f.riskPct}% of ${Number(f.balance).toLocaleString()}`} />
+                  <Stat label="Position size" value={money.lots != null ? `${money.lots.toFixed(2)} ${money.inst.unit}` : "—"} sub={`stop ${money.pips.toFixed(1)} pips · ${(money.stopDist / a.atr).toFixed(2)} ATR`} />
+                  <Stat label="If target 1 hits" value={money.potentialReward != null ? `+${money.potentialReward.toFixed(2)}` : "—"} tone="bull" sub={money.rr != null ? `${money.rr.toFixed(2)}:1` : ""} />
+                  <Stat label="Direction" value={money.dir === "long" ? "Long" : "Short"} tone={dir === "bull" ? "bull" : "bear"} sub={`entry at zone mid ${setup.entry.toFixed(digits)}`} />
+                </div>
+                {money.warnings.slice(0, 2).map((wn, i) => <div className="mt" key={i}><Warn level={wn.level}>{wn.text}</Warn></div>)}
+              </>
+            )}
+            <p className="note mt">Educational scenario, not a recommendation. Entry is the middle of a mapped zone, the stop sits beyond the structure that would invalidate the idea, targets are the next mapped areas. It carries no view on whether to take the trade.</p>
+          </>
+        )}
+      </Card>
+
+      {/* ------------------------------ checklist -------------------------------- */}
+      <Fold title="Confirmation checklist" open={openChk} onToggle={() => setOpenChk((v) => !v)}
+        right={<Pill tone={done >= 6 ? "bull" : "flat"}>{done}/{list.length} ticked</Pill>}>
+        <div className="row" style={{ gap: 5, marginBottom: 10 }}>
+          <button className="tf" data-on={chkSide === "bull" ? "1" : "0"} onClick={() => setChkSide("bull")}>Bullish</button>
+          <button className="tf" data-on={chkSide === "bear" ? "1" : "0"} onClick={() => setChkSide("bear")}>Bearish</button>
+        </div>
+        <Bar value={done} max={list.length} color={chkSide === "bull" ? T.bull : T.bear} />
+        <div style={{ marginTop: 10 }}>
+          {list.map(([k, label]) => {
+            const auto = autoState(k, a, led, htf);
+            const on = !!checks[k];
+            return (
+              <button key={k} className="chk" onClick={() => toggleCheck(k)} aria-pressed={on}>
+                <span className="box" style={{ background: on ? (chkSide === "bull" ? T.bull : T.bear) : "transparent", color: T.ink, borderColor: on ? (chkSide === "bull" ? T.bull : T.bear) : T.line2 }}>{on ? "✓" : ""}</span>
+                <span style={{ fontSize: 13 }}>{label}
+                  <small style={{ display: "block", color: auto === true ? T.bull : auto === false ? T.dim : T.faint, fontSize: 11.5, marginTop: 2 }}>
+                    {auto === true ? "The loaded data supports this." : auto === false ? "The loaded data does not support this yet." : "Only you can judge this one — it depends on the candle in front of you."}
+                  </small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {done < 6 && <div className="mt"><Warn level="med">Fewer than six boxes ticked. An unticked box is a specific piece of evidence you do not have yet.</Warn></div>}
+      </Fold>
+    </>
+  );
+}
+
+/* ================================= CHART TAB =============================== */
+function ChartTab({ a, digits, layers, setLayers, scenarioLines, ladder, htfTf, tradeTf, openWhy, setOpenWhy }) {
+  const L = (k, label) => (
+    <button key={k} className="tf" data-on={layers[k] ? "1" : "0"} onClick={() => setLayers((s) => ({ ...s, [k]: !s[k] }))}>{label}</button>
+  );
+  return (
+    <>
       <Card title="Annotated chart" right={<span className="tag">{a.candles.length} bars loaded</span>}>
         <div className="row" style={{ gap: 5, marginBottom: 10 }}>
           <span className="lbl" style={{ margin: 0 }}>Layers</span>
           {L("structure", "Structure")}{L("sr", "S/R zones")}{L("fvg", "FVG")}{L("sd", "Supply/demand")}{L("liquidity", "Liquidity")}{L("ema", "EMAs")}{L("scenario", "Scenario levels")}
         </div>
         <ChartPanel a={a} digits={digits} layers={layers} scenarioLines={scenarioLines} />
-        <p className="note mt">Labels are placed only where the data supports them: HH/HL/LH/LL come from confirmed swing pivots, BOS and CHOCH from candle closes through a prior swing, and zones from clustered pivot prices. Nothing is drawn by hand. RSI, MACD and volume read off the same candles as the price panel — switch them on above the chart.</p>
-      </Card>
-
-      <Card title="Analysis breakdown">
-        <div className="scroll">
-          <table className="tbl">
-            <thead><tr><th style={{ width: "34%" }}>Analysis</th><th style={{ width: "22%" }}>Reading</th><th>Why</th></tr></thead>
-            <tbody>
-              {rows.map(([k, v, why]) => (
-                <tr key={k}>
-                  <td>{k}</td>
-                  <td><Pill tone={readTone(v)}>{v}</Pill></td>
-                  <td className="note">{why}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p className="note mt">Every label comes from the data: HH/HL/LH/LL from confirmed swing pivots, BOS and CHOCH from closes through a prior swing, zones from clustered pivot prices. RSI, MACD and volume read off the same candles — switch them on above the chart.</p>
       </Card>
 
       <div className="grid g2">
-        <Card title="Multi-timeframe ladder" right={<Why id="mtf" open={openWhy} setOpen={setOpenWhy}>Every row is built by combining the loaded candles into larger ones, so all rows describe the same price data at different resolutions. A timeframe smaller than the loaded series cannot be reconstructed — you can merge candles, never split them.</Why>}>
+        <Card title="Multi-timeframe ladder" right={<Why id="mtf" open={openWhy} setOpen={setOpenWhy}>Every row is the same candles merged into larger ones, so all rows describe one price series at different resolutions. A timeframe smaller than the loaded series cannot be reconstructed — candles merge, they never split.</Why>}>
           <div className="ledger">
             {ladder.map((l) => (
               <div key={l.tf} className="led" style={{ gridTemplateColumns: "56px 14px 1fr" }}>
@@ -1947,8 +2084,8 @@ function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLay
             const av = ladder.filter((l) => l.available);
             const bulls = av.filter((l) => l.read === "Bullish").length, bears = av.filter((l) => l.read === "Bearish").length;
             if (!av.length) return "No timeframe could be assessed.";
-            if (bulls && bears) return `Timeframes disagree: ${bulls} read bullish and ${bears} read bearish. When context and entry point in opposite directions, the smaller timeframe is usually the one that gets you into trouble.`;
-            if (bulls) return `All ${bulls} assessable timeframes read bullish. Alignment raises the odds that a pullback is a pullback rather than a turn — it does not remove the need for a level and a trigger.`;
+            if (bulls && bears) return `Timeframes disagree: ${bulls} bullish, ${bears} bearish. When context and entry point opposite ways, the smaller timeframe is usually the one that gets you into trouble.`;
+            if (bulls) return `All ${bulls} assessable timeframes read bullish. Alignment raises the odds that a pullback is a pullback — it does not remove the need for a level and a trigger.`;
             if (bears) return `All ${bears} assessable timeframes read bearish.`;
             return "Every assessable timeframe reads neutral — structure is not stacking anywhere.";
           })()}</p>
@@ -1967,10 +2104,71 @@ function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLay
               </tbody>
             </table>
           </div>
-          {a.sr.all.length === 0 && <p className="note">No zone could be built: the series does not contain enough clustered swing points. No levels are invented to fill the gap.</p>}
-          <p className="note mt">Zones are clusters of swing prices, widened by a fraction of ATR. They are areas, not lines — price reacting 3 pips early is still a reaction.</p>
+          {a.sr.all.length === 0 && <p className="note">No zone could be built: the series has too few clustered swing points. No levels are invented to fill the gap.</p>}
+          <p className="note mt">Zones are clusters of swing prices widened by a fraction of ATR. They are areas, not lines.</p>
         </Card>
       </div>
+
+      <StructureTab a={a} digits={digits} openWhy={openWhy} setOpenWhy={setOpenWhy} ladder={ladder} htfTf={htfTf} tradeTf={tradeTf} />
+    </>
+  );
+}
+
+/* ================================ BREAKDOWN ================================ */
+function DetailTab({ a, led, scen, bias, status, ladder, htf, digits, pairLabel, tradeTf, htfTf, openWhy, setOpenWhy, teach, setTeach, source }) {
+  const rows = [
+    ["Higher timeframe", htf?.available ? htf.read : "Unavailable", htf?.available ? `The ${htf.tf} series built from this data reads ${htf.structure.toLowerCase()} structure with ${htf.strength.toLowerCase()} trend strength.` : `A ${htfTf} series cannot be built from the loaded data (${htf?.reason || "unavailable"}).`],
+    ["Market structure", a.structRead, a.structure.detail],
+    ["Momentum", a.momentumRead, `MACD reads ${a.macdRead.toLowerCase()} and RSI reads ${a.rsiRead.toLowerCase()}. This row only leaves neutral when both agree.`],
+    ["Moving averages", a.maRead, a.maWhy],
+    ["RSI", a.rsiRead, `RSI(14) is ${a.rsiVal != null ? a.rsiVal.toFixed(1) : "unavailable"} — ${a.rsiState.toLowerCase()}. A high RSI in a strong trend is a sign of strength, not an automatic sell; it can stay above 70 for a long time.`],
+    ["MACD", a.macdRead, a.macdWhy],
+    ["Support / resistance", a.srRead, a.srWhy],
+    ["Liquidity", a.liq.sweep ? "Relevant" : "Neutral", a.liq.sweep ? `A bar in the last 12 traded through ${a.liq.sweep.level.kind.toLowerCase()} at ${a.liq.sweep.level.price.toFixed(digits)} and closed back inside. Orders resting there were reached. That is information, not a reversal signal.` : "No mapped liquidity level has been swept in the last 12 bars."],
+    ["Volatility", a.volatility, `ATR(14) is ${a.atr.toFixed(digits)}, which is ${a.atrPct.toFixed(2)}% of price and sits in the ${a.volatility.toLowerCase()} part of its own recent range. This is the number your stop distance should be measured against.`],
+  ];
+
+  return (
+    <>
+      <Card title="Confluence ledger — where the 8 points come from"
+        right={<Why id="ledger" open={openWhy} setOpen={setOpenWhy}>Each row scores independently and the maximum is eight. Structure and higher timeframe are worth two because they change slowly and set context; the rest are worth one because they change bar to bar. Every point ships with the evidence that produced it, so you can disagree with a line rather than with a black box.</Why>}>
+        <div className="scroll">
+          <table className="tbl">
+            <thead><tr><th style={{ width: "22%" }}>Component</th><th style={{ width: 66 }}>Bull</th><th style={{ width: 66 }}>Bear</th><th>Evidence</th></tr></thead>
+            <tbody>
+              {led.rows.map((r) => (
+                <tr key={r.key}>
+                  <td>{r.key}<div className="note" style={{ fontSize: 11 }}>max {r.max}</div></td>
+                  <td className="num" style={{ color: r.bull ? T.bull : T.faint, fontWeight: r.bull ? 700 : 400 }}>+{r.bull}</td>
+                  <td className="num" style={{ color: r.bear ? T.bear : T.faint, fontWeight: r.bear ? 700 : 400 }}>+{r.bear}</td>
+                  <td className="note">{r.why}</td>
+                </tr>
+              ))}
+              <tr><td><b>Total</b></td>
+                <td className="num" style={{ color: T.bull, fontWeight: 700 }}>{led.bull}/8</td>
+                <td className="num" style={{ color: T.bear, fontWeight: 700 }}>{led.bear}/8</td>
+                <td className="note">Technical Confluence Score. A tally of agreeing evidence — not a probability, and not validated against historical outcomes.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card title="Analysis breakdown">
+        <div className="scroll">
+          <table className="tbl">
+            <thead><tr><th style={{ width: "24%" }}>Analysis</th><th style={{ width: "18%" }}>Reading</th><th>Why</th></tr></thead>
+            <tbody>
+              {rows.map(([k, v, why]) => (
+                <tr key={k}>
+                  <td>{k}</td>
+                  <td><Pill tone={readTone(v)}>{v}</Pill></td>
+                  <td className="note">{why}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <Card title="Market summary" accent={toneColor(status.tone)}>
         <div className="grid g4" style={{ gap: 10 }}>
@@ -1986,7 +2184,7 @@ function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLay
         <div className="hr" />
         <div className="grid g2" style={{ gap: 12 }}>
           <div>
-            <div className="eyebrow">Scenario the evidence currently favours</div>
+            <div className="eyebrow">Scenario the evidence favours</div>
             <p className="note mt">{led.bull > led.bear ? scen.bullish.condition[0] + " " + scen.bullish.confirmation[0] : led.bear > led.bull ? scen.bearish.condition[0] + " " + scen.bearish.confirmation[0] : "Neither side has the stronger case. The market is between references and the honest read is that there is nothing to do yet."}</p>
           </div>
           <div>
@@ -1994,11 +2192,14 @@ function AnalyzerTab({ a, led, bias, status, htf, ladder, digits, layers, setLay
             <p className="note mt">{led.bull > led.bear ? scen.bearish.condition[0] + " " + (scen.bearish.targets[0] ? `The first area below is ${scen.bearish.targets[0].v}.` : "") : scen.bullish.condition[0] + " " + (scen.bullish.targets[0] ? `The first area above is ${scen.bullish.targets[0].v}.` : "")}</p>
           </div>
         </div>
-        <div className="mt"><Warn level="med"><b>Invalidation.</b> {led.bull >= led.bear ? scen.bullish.invalidation : scen.bearish.invalidation}</Warn></div>
       </Card>
+
+      <LearnTab a={a} led={led} scen={scen} bias={bias} status={status} ladder={ladder} htf={htf} digits={digits}
+        pairLabel={pairLabel} tradeTf={tradeTf} htfTf={htfTf} teach={teach} setTeach={setTeach} source={source} />
     </>
   );
 }
+
 function SRRow({ z, digits, price }) {
   const inside = price >= z.lo && price <= z.hi;
   return (
@@ -2181,158 +2382,6 @@ function autoState(key, a, led, htf) {
     s7: null, s8: !(htf?.available && htf.read === "Bullish"),
   };
   return map[key];
-}
-
-function ScenarioCard({ s, digits, openWhy, setOpenWhy, id }) {
-  const c = toneColor(s.tone);
-  return (
-    <Card accent={c} title={s.title} right={<Pill tone={s.tone} solid>{s.score}/8</Pill>}>
-      <div className="eyebrow">Condition — what would have to happen</div>
-      <ul style={{ margin: "7px 0 0 17px", padding: 0, fontSize: 13, lineHeight: 1.6 }}>{s.condition.map((x, i) => <li key={i} style={{ marginBottom: 4 }}>{x}</li>)}</ul>
-      <div className="hr" />
-      <div className="eyebrow">Confirmation — what would show it is happening</div>
-      <ul style={{ margin: "7px 0 0 17px", padding: 0, fontSize: 13, lineHeight: 1.6 }}>{s.confirmation.map((x, i) => <li key={i} style={{ marginBottom: 4 }}>{x}</li>)}</ul>
-      <div className="hr" />
-      <div className="eyebrow">Potential target areas</div>
-      {s.targets.length ? (
-        <table className="tbl" style={{ marginTop: 6 }}>
-          <tbody>{s.targets.map((t, i) => (
-            <tr key={i}><td style={{ width: 130 }}>{t.label}</td><td className="num">{t.v}</td><td className="note">{t.note}</td></tr>
-          ))}</tbody>
-        </table>
-      ) : <p className="note mt">No target area could be mapped in this direction from the available data. Trading toward an unmapped area means you have no basis for where to take profit.</p>}
-      <div className="mt"><Warn level={s.tone === "bull" ? "med" : "med"}><b>Invalidation.</b> {s.invalidation}</Warn></div>
-      <div className="mt"><Why id={id} open={openWhy} setOpen={setOpenWhy}>
-        This scenario scored {s.score} of 8 on the confluence ledger. The score is a count of how many independent pieces of evidence currently point this way — it is not a probability and has not been tested against outcomes. A 6/8 scenario still fails regularly, which is exactly why the invalidation line above is defined before any entry.
-      </Why></div>
-    </Card>
-  );
-}
-
-function ScenariosTab({ a, led, scen, digits, checks, toggleCheck, openWhy, setOpenWhy, status, htf }) {
-  const [side, setSide] = useState("bull");
-  const list = side === "bull" ? BULL_CHECKS : BEAR_CHECKS;
-  const done = list.filter(([k]) => checks[k]).length;
-  const setup = useMemo(() => {
-    const dir = led.bull >= led.bear ? "bull" : "bear";
-    const s = dir === "bull" ? scen.bullish : scen.bearish;
-    const entryZone = dir === "bull" ? a.sr.sup[0] : a.sr.res[0];
-    const pivot = [...a.pivots].reverse().find((x) => (dir === "bull" ? x.type === "L" : x.type === "H"));
-    if (!entryZone || !pivot) return null;
-    const entry = entryZone.mid;
-    const stop = dir === "bull" ? Math.min(pivot.price, entryZone.lo) - a.atr * 0.3 : Math.max(pivot.price, entryZone.hi) + a.atr * 0.3;
-    const t1v = s.targets[0] ? parseFloat(String(s.targets[0].v).split("–")[0]) : null;
-    const t2v = s.targets[1] ? parseFloat(String(s.targets[1].v).split("–")[0]) : null;
-    const rr1 = t1v != null ? Math.abs(t1v - entry) / Math.abs(entry - stop) : null;
-    const rr2 = t2v != null ? Math.abs(t2v - entry) / Math.abs(entry - stop) : null;
-    return { dir, entry, stop, t1v, t2v, rr1, rr2, entryZone, pivot };
-  }, [a, led, scen]);
-
-  return (
-    <>
-      <Card accent={toneColor(status.tone)}>
-        <div className="spread">
-          <div>
-            <div className="eyebrow">Current status</div>
-            <h2 style={{ fontSize: 26, marginTop: 5, color: toneColor(status.tone) }}>{status.icon} {status.text}</h2>
-          </div>
-          <div className="row" style={{ gap: 8 }}><Pill tone="bull">Bull {led.bull}/8</Pill><Pill tone="bear">Bear {led.bear}/8</Pill></div>
-        </div>
-      </Card>
-
-      <Card title="Confluence ledger" right={<Why id="ledger" open={openWhy} setOpen={setOpenWhy}>Each row is scored independently and the maximum is eight. Structure and higher timeframe are worth two because they change slowly and set the context; the rest are worth one because they change bar to bar. Every point comes with the evidence that produced it, so you can disagree with a specific line rather than with a black box.</Why>}>
-        <div className="scroll">
-          <table className="tbl">
-            <thead><tr><th style={{ width: "22%" }}>Component</th><th style={{ width: 70 }}>Bull</th><th style={{ width: 70 }}>Bear</th><th>Evidence</th></tr></thead>
-            <tbody>
-              {led.rows.map((r) => (
-                <tr key={r.key}>
-                  <td>{r.key}<div className="note" style={{ fontSize: 11 }}>max {r.max}</div></td>
-                  <td className="num" style={{ color: r.bull ? T.bull : T.faint, fontWeight: r.bull ? 700 : 400 }}>+{r.bull}</td>
-                  <td className="num" style={{ color: r.bear ? T.bear : T.faint, fontWeight: r.bear ? 700 : 400 }}>+{r.bear}</td>
-                  <td className="note">{r.why}</td>
-                </tr>
-              ))}
-              <tr><td><b>Total</b></td>
-                <td className="num" style={{ color: T.bull, fontWeight: 700 }}>{led.bull}/8</td>
-                <td className="num" style={{ color: T.bear, fontWeight: 700 }}>{led.bear}/8</td>
-                <td className="note">Technical Confluence Score. A tally of agreeing evidence — not a probability, and not validated against historical outcomes.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <ScenarioCard s={scen.bullish} digits={digits} openWhy={openWhy} setOpenWhy={setOpenWhy} id="scA" />
-      <ScenarioCard s={scen.bearish} digits={digits} openWhy={openWhy} setOpenWhy={setOpenWhy} id="scB" />
-
-      <Card accent={T.warn} title="Scenario C — No trade / wait"
-        right={<Pill tone="warn" solid>{scen.noTrade.active ? "Conditions met" : "Not currently indicated"}</Pill>}>
-        {scen.noTrade.checks.length === 0 ? (
-          <p className="note">None of the standard stand-aside conditions are present in this data. That is not permission to trade — it only means the obvious reasons to wait are absent.</p>
-        ) : (
-          <>
-            <p style={{ fontSize: 14, marginBottom: 9 }}>{scen.noTrade.active ? "The honest read here is: no clear setup — wait." : "Some stand-aside conditions are present. They weaken any case, without cancelling it."}</p>
-            <div className="ledger">
-              {scen.noTrade.checks.map((c, i) => (
-                <div className="led" key={i}><span className="dot" style={{ background: T.warn }} /><span>{c.text}</span><span /></div>
-              ))}
-            </div>
-          </>
-        )}
-        <p className="note mt">Deciding not to trade is a position. Most accounts are not lost on bad analysis; they are lost on trades taken in conditions where nothing was readable and something was done anyway.</p>
-      </Card>
-
-      <Card title="Confirmation checklist"
-        right={<div className="row" style={{ gap: 5 }}>
-          <button className="tf" data-on={side === "bull" ? "1" : "0"} onClick={() => setSide("bull")}>Bullish</button>
-          <button className="tf" data-on={side === "bear" ? "1" : "0"} onClick={() => setSide("bear")}>Bearish</button>
-        </div>}>
-        <div className="spread" style={{ marginBottom: 8 }}>
-          <span className="lbl" style={{ margin: 0 }}>{done} of {list.length} ticked by you</span>
-          <span className="mono" style={{ color: done >= 6 ? T.bull : T.dim }}>{done}/{list.length}</span>
-        </div>
-        <Bar value={done} max={list.length} color={side === "bull" ? T.bull : T.bear} />
-        <div style={{ marginTop: 10 }}>
-          {list.map(([k, label]) => {
-            const auto = autoState(k, a, led, htf);
-            const on = !!checks[k];
-            return (
-              <button key={k} className="chk" onClick={() => toggleCheck(k)} aria-pressed={on}>
-                <span className="box" style={{ background: on ? (side === "bull" ? T.bull : T.bear) : "transparent", color: T.ink, borderColor: on ? (side === "bull" ? T.bull : T.bear) : T.line2 }}>{on ? "✓" : ""}</span>
-                <span style={{ fontSize: 13 }}>{label}
-                  <small style={{ display: "block", color: auto === true ? T.bull : auto === false ? T.dim : T.faint, fontSize: 11.5, marginTop: 2 }}>
-                    {auto === true ? "The loaded data supports this." : auto === false ? "The loaded data does not support this yet." : "Only you can judge this one — it depends on the candle in front of you and on your own rules."}
-                  </small>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {done < 6 && <div className="mt"><Warn level="med">Fewer than six boxes are ticked. The checklist is not a scorecard to rush through — an unticked box is a specific piece of evidence you do not have yet.</Warn></div>}
-      </Card>
-
-      <Card title="Potential setup, worked through" accent={T.info}>
-        {!setup ? (
-          <p className="note">A setup cannot be constructed: this data does not give both an entry reference (a mapped zone in the favoured direction) and a structural stop location. Rather than invent numbers, the tool stops here.</p>
-        ) : (
-          <>
-            <div className="grid g4" style={{ gap: 10 }}>
-              <Stat label="Direction" value={setup.dir === "bull" ? "Bullish" : "Bearish"} tone={setup.dir === "bull" ? "bull" : "bear"} />
-              <Stat label="Entry zone" value={`${setup.entryZone.lo.toFixed(digits)} – ${setup.entryZone.hi.toFixed(digits)}`} sub={`${setup.entryZone.name}, ${setup.entryZone.touches} reactions`} />
-              <Stat label="Stop-loss" value={setup.stop.toFixed(digits)} tone="warn" sub={`beyond the ${setup.dir === "bull" ? "higher low" : "lower high"} at ${setup.pivot.price.toFixed(digits)}`} />
-              <Stat label="Distance" value={`${Math.abs(setup.entry - setup.stop).toFixed(digits)}`} sub={`${(Math.abs(setup.entry - setup.stop) / a.atr).toFixed(2)} ATR`} />
-              <Stat label="Target 1" value={setup.t1v != null ? setup.t1v.toFixed(digits) : "none mapped"} sub={setup.rr1 != null ? `${setup.rr1.toFixed(2)}:1` : ""} />
-              <Stat label="Target 2" value={setup.t2v != null ? setup.t2v.toFixed(digits) : "none mapped"} sub={setup.rr2 != null ? `${setup.rr2.toFixed(2)}:1` : ""} />
-              <Stat label="R:R to target 1" value={setup.rr1 != null ? `${setup.rr1.toFixed(2)} : 1` : "—"} tone={setup.rr1 != null && setup.rr1 >= 1.5 ? "bull" : "warn"} />
-              <Stat label="Confluence" value={`${setup.dir === "bull" ? led.bull : led.bear}/8`} tone={setup.dir === "bull" ? "bull" : "bear"} />
-            </div>
-            <div className="mt"><Warn level="info">This is an educational scenario, not a guaranteed trade recommendation. The entry is the middle of a mapped zone, the stop sits beyond the structure that would invalidate the idea, and the targets are the next mapped areas — that is all. It contains no view on whether the trade should be taken.</Warn></div>
-            {setup.rr1 != null && setup.rr1 < 1 && <div className="mt"><Warn level="high">Reward to the first target is smaller than the risk. Taken repeatedly, that arrangement needs a very high strike rate to break even.</Warn></div>}
-          </>
-        )}
-      </Card>
-    </>
-  );
 }
 
 /* ================================= RISK TAB ================================ */
