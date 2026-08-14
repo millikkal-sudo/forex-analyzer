@@ -59,8 +59,6 @@ const CSS = `
 
 /* shell */
 .shell{max-width:1320px;margin:0 auto;padding:0 18px 72px}
-.topbar{position:sticky;top:0;z-index:30;background:rgba(8,11,17,.93);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-.topin{max-width:1320px;margin:0 auto;padding:11px 18px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .brand{display:flex;align-items:baseline;gap:9px}
 .brand b{font-family:'IBM Plex Sans Condensed',sans-serif;font-size:17px;letter-spacing:.02em}
 .nav{display:flex;gap:2px;flex-wrap:wrap;margin-left:auto}
@@ -126,31 +124,65 @@ const CSS = `
 .tag{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid var(--line);color:var(--dim)}
 .hr{height:1px;background:var(--line);margin:13px 0}
 .g2{grid-template-columns:1fr 1fr}
+
+/* ------------------------------------------------------- app shell layout -- */
+.app{display:flex;min-height:100vh;align-items:flex-start}
+.rail{position:fixed;left:0;top:0;bottom:0;width:262px;z-index:60;display:flex;flex-direction:column;
+  background:${T.panel};border-right:1px solid var(--line);overflow-y:auto;overscroll-behavior:contain}
+.rail::-webkit-scrollbar{width:8px}
+.railbrand{padding:16px 16px 13px;border-bottom:1px solid var(--line)}
+.railbrand b{display:block;font-size:13px;letter-spacing:.16em;color:var(--text)}
+.railnav{padding:11px 10px;border-bottom:1px solid var(--line)}
+.railgrp{margin-bottom:11px}
+.railgrp:last-child{margin-bottom:0}
+.railgrp>i{display:block;font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--faint);padding:0 8px 6px}
+.railnav button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:7px;margin-bottom:2px;
+  font-size:13px;color:var(--dim);text-align:left;transition:background .15s ease,color .15s ease}
+.railnav button:hover{background:var(--panel2);color:var(--text)}
+.railnav button[data-on="1"]{background:var(--panel2);color:var(--text);font-weight:600;box-shadow:inset 2px 0 0 ${T.info}}
+.railsec{padding:13px 14px;border-bottom:1px solid var(--line)}
+.railsec select,.railsec input{width:100%}
+.tfwrap{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.railfoot{padding:12px 14px;margin-top:auto}
+.qbtn{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:9px;padding:8px 10px;
+  border:1px solid var(--line);border-radius:7px}
+.qbtn:hover{border-color:${T.line2}}
+.scrim{display:none}
+
+.content{flex:1;min-width:0;margin-left:262px}
+.stickytop{position:sticky;top:0;z-index:50;background:${T.ink}f2;backdrop-filter:blur(9px);border-bottom:1px solid var(--line)}
+.chead{display:flex;align-items:center;gap:11px;padding:11px 22px}
+.chead h2{font-size:15px;letter-spacing:.04em;color:var(--text);white-space:nowrap}
+.chead .refresh{margin-left:auto;display:inline-flex;align-items:center;white-space:nowrap}
+.burger{display:none;padding:7px;border:1px solid var(--line);border-radius:7px;color:var(--dim)}
+.burger:hover{color:var(--text)}
+.content .shell{padding:0 22px 34px}
+.content .sigbar{border-top:1px solid var(--line);border-bottom:none}
+
+@media (max-width:980px){
+  .rail{transform:translateX(-100%);transition:transform .22s ease;box-shadow:0 0 40px rgba(0,0,0,.6);width:280px}
+  .app[data-nav="1"] .rail{transform:none}
+  .app[data-nav="1"] .scrim{display:block;position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.55)}
+  .content{margin-left:0}
+  .burger{display:inline-flex}
+  .chead{padding:10px 14px;gap:9px}
+  .content .shell{padding:0 14px 30px}
+  .hide-sm{display:none}
+  .chead .refresh{padding:8px 10px}
+}
 ul.tight{margin:7px 0 0 17px;padding:0;font-size:13px;line-height:1.6}
 ul.tight li{margin-bottom:4px}
 .g3{grid-template-columns:repeat(3,1fr)}
 .g4{grid-template-columns:repeat(4,1fr)}
-.sidebyside{display:grid;grid-template-columns:320px 1fr;gap:14px;align-items:start}
-@media (max-width:980px){.sidebyside{grid-template-columns:1fr}.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:1fr}}
-@media (max-width:640px){.g2{grid-template-columns:1fr}.g4{grid-template-columns:repeat(2,1fr)}.shell{padding:0 12px 60px}.topin{padding:10px 12px}}
+@media (max-width:980px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:1fr}}
+@media (max-width:640px){.g2{grid-template-columns:1fr}.g4{grid-template-columns:repeat(2,1fr)}}
 @media (prefers-reduced-motion:no-preference){.fade{animation:fx-fade .28s ease both}}
 @keyframes fx-fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .fx ::-webkit-scrollbar{height:9px;width:9px}
 .fx ::-webkit-scrollbar-thumb{background:${T.line2};border-radius:9px}
 .fx ::-webkit-scrollbar-track{background:transparent}
 
-/* nav — grouped by workflow stage */
-.nav{display:flex;align-items:flex-end;gap:0;margin-left:auto;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
-.nav::-webkit-scrollbar{display:none}
-.navgrp{display:flex;flex-direction:column;gap:4px;padding:0 11px;border-left:1px solid var(--line);flex:none}
-.navgrp:first-child{border-left:none;padding-left:0}
-.navgrp:last-child{padding-right:0}
-.navgrp>i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);white-space:nowrap;padding-left:3px}
-.navgrp[data-active="1"]>i{color:${T.info}}
-.navgrp>div{display:flex;gap:2px}
-.nav button{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:6px;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-family:'IBM Plex Mono',monospace;white-space:nowrap}
-.ico{flex:none;opacity:.9}
-@media (max-width:900px){.nav{margin-left:0;width:100%;padding:2px 0 1px}.topin{gap:10px}.navgrp{padding:0 9px}.nav button{padding:7px 9px;font-size:10.5px;letter-spacing:.06em}}
 
 /* collapsible cards */
 .fold>header{padding:0;gap:0}
@@ -187,10 +219,6 @@ ul.tight li{margin-bottom:4px}
 .tip .r em{font-style:normal;color:var(--text);font-variant-numeric:tabular-nums}
 .tip .div{height:1px;background:var(--line);margin:6px 0}
 
-/* mobile: the chart comes before the input controls */
-.sidebyside>.side{min-width:0}
-.sidebyside>.main{min-width:0}
-@media (max-width:980px){.sidebyside>.main{order:1}.sidebyside>.side{order:2}}
 `;
 
 /* ------------------------------------------------------------ instruments -- */
@@ -797,6 +825,94 @@ function buildVerdict(a, led, scen, digits) {
 }
 
 /* =============================== RISK ENGINE =============================== */
+/* ============================== SIGNAL REPLAY ==============================
+   The confluence score is a hand-set count of agreeing evidence. On its own it
+   claims nothing. This walks the loaded candles bar by bar, rebuilds the entire
+   read using only the bars that existed at that moment, and records what price
+   actually did next. It is still in-sample, on one instrument, over one period,
+   and it excludes spread, commission and slippage — but it replaces an opinion
+   about the signal with a measurement of it. */
+function htfSnapshot(slice, tfMin, htfMin) {
+  if (htfMin % tfMin !== 0) return null;
+  const ratio = Math.round(htfMin / tfMin);
+  const rs = ratio <= 1 ? slice : resample(slice, ratio);
+  if (rs.length < 30) return null;
+  const h = analyzeSeries(rs, htfMin);
+  if (!h) return null;
+  const e20 = last(h.ema[20].filter((v) => v != null)), e50 = last(h.ema[50].filter((v) => v != null));
+  let read = h.structRead;
+  if (read === "Neutral" && e20 && e50) read = h.price > e20 && e20 > e50 ? "Bullish" : h.price < e20 && e20 < e50 ? "Bearish" : "Neutral";
+  return { tf: "higher", available: true, read, structure: h.structure.state, strength: h.strength };
+}
+
+function replaySignals({ candles, tfMin, htfMin, digits, horizon = 40, warmup = 260 }) {
+  const n = candles.length;
+  const need = warmup + horizon + 10;
+  if (n < need) return { ok: false, reason: `${n} bars loaded. A replay needs at least ${need}: ${warmup} for the analysis to have history to read, ${horizon} for price to resolve the last signal.` };
+
+  const step = Math.max(1, Math.round((n - warmup - horizon) / 300));
+  const trades = [];
+  let busyUntil = -1;
+
+  for (let i = warmup; i < n - horizon; i += step) {
+    if (i < busyUntil) continue;
+    const slice = candles.slice(0, i + 1);
+    const a = analyzeSeries(slice, tfMin);
+    if (!a) continue;
+    const htf = htfSnapshot(slice, tfMin, htfMin);
+    const led = buildLedger(a, htf, digits);
+    const scen = buildScenarios(a, led, htf, digits);
+    const v = buildVerdict(a, led, scen, digits);
+    if (!v.side) continue;
+
+    const setup = buildSetup(a, led, scen, v.side);
+    if (!setup || setup.t1v == null) continue;
+    const { entry, stop, t1v } = setup;
+    const risk = Math.abs(entry - stop);
+    const long = v.side === "bull";
+    if (!(risk > 0)) continue;
+    // the plan must be coherent before it is worth measuring
+    if (long ? !(t1v > entry && stop < entry) : !(t1v < entry && stop > entry)) continue;
+
+    let fillI = null, out = null, exitI = null;
+    for (let j = i + 1; j <= i + horizon && j < n; j++) {
+      const k = candles[j];
+      if (fillI == null) {
+        if (k.l <= entry && k.h >= entry) fillI = j; else continue;
+      }
+      // stop is checked first: when one bar spans both, assume the worse fill
+      if (long ? k.l <= stop : k.h >= stop) { out = "loss"; exitI = j; break; }
+      if (long ? k.h >= t1v : k.l <= t1v) { out = "win"; exitI = j; break; }
+    }
+
+    if (fillI == null) { trades.push({ i, side: v.side, score: v.score, filled: false, out: "unfilled", r: null }); continue; }
+    let r;
+    if (out === "win") r = Math.abs(t1v - entry) / risk;
+    else if (out === "loss") r = -1;
+    else { out = "open"; const px = candles[Math.min(i + horizon, n - 1)].c; r = (long ? px - entry : entry - px) / risk; }
+    trades.push({ i, side: v.side, score: v.score, filled: true, out, r });
+    busyUntil = (exitI != null ? exitI : i + horizon) + 1;
+  }
+
+  const filled = trades.filter((t) => t.filled);
+  const wins = filled.filter((t) => t.out === "win").length;
+  const losses = filled.filter((t) => t.out === "loss").length;
+  const opens = filled.filter((t) => t.out === "open").length;
+  const decided = wins + losses;
+  const sumR = filled.reduce((s, t) => s + t.r, 0);
+  const side = (k) => {
+    const f = filled.filter((t) => t.side === k);
+    const w = f.filter((t) => t.out === "win").length, l = f.filter((t) => t.out === "loss").length;
+    return { n: f.length, w, l, hit: w + l ? w / (w + l) : null, r: f.length ? f.reduce((s, t) => s + t.r, 0) / f.length : null };
+  };
+  return {
+    ok: true, trades, signals: trades.length, filled: filled.length, unfilled: trades.length - filled.length,
+    wins, losses, opens, decided, hit: decided ? wins / decided : null,
+    expectancy: filled.length ? sumR / filled.length : null, sumR,
+    bull: side("bull"), bear: side("bear"), horizon, warmup, step, bars: n,
+  };
+}
+
 function riskCalc({ balance, riskPct, entry, stop, target, pairKey, atr }) {
   const inst = INSTRUMENTS[pairKey] || INSTRUMENTS["Custom pair"];
   const risk = balance * (riskPct / 100);
@@ -852,31 +968,6 @@ function makeIllustrative(pairKey, tf, n, seedNum) {
 }
 
 /* ============================== CSV / OHLC PARSER ========================== */
-function parseOHLC(text) {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const rows = [];
-  const errors = [];
-  let skippedHeader = false;
-  lines.forEach((line, idx) => {
-    const parts = line.split(/[,;\t|]+/).map((s) => s.trim()).filter((s) => s !== "");
-    if (parts.length < 4) { errors.push(`Line ${idx + 1}: needs at least 4 values (open, high, low, close).`); return; }
-    const nums = parts.map((p) => Number(p.replace(/["']/g, "")));
-    let o, h, l, c, v = null, t = null;
-    if (parts.length >= 5 && !Number.isFinite(nums[0])) {
-      const d = Date.parse(parts[0]);
-      if (!Number.isFinite(d)) { if (!skippedHeader && idx === 0) { skippedHeader = true; return; } errors.push(`Line ${idx + 1}: first value is neither a number nor a readable date.`); return; }
-      t = d; [o, h, l, c] = nums.slice(1, 5); v = Number.isFinite(nums[5]) ? nums[5] : null;
-    } else if (parts.length >= 5 && Number.isFinite(nums[0]) && nums[0] > 1e11) {
-      t = nums[0]; [o, h, l, c] = nums.slice(1, 5); v = Number.isFinite(nums[5]) ? nums[5] : null;
-    } else { [o, h, l, c] = nums.slice(0, 4); v = Number.isFinite(nums[4]) ? nums[4] : null; }
-    if (![o, h, l, c].every(Number.isFinite)) { if (!skippedHeader && idx === 0) { skippedHeader = true; return; } errors.push(`Line ${idx + 1}: could not read four numeric prices.`); return; }
-    if (h < Math.max(o, c) - 1e-9 || l > Math.min(o, c) + 1e-9) errors.push(`Line ${idx + 1}: high/low do not contain open/close — check column order (expected O,H,L,C).`);
-    rows.push({ t, o, h, l, c, v });
-  });
-  const step = 60000;
-  rows.forEach((r, i) => { if (r.t == null) r.t = Date.UTC(2024, 0, 1) + i * step; });
-  return { rows, errors: errors.slice(0, 6) };
-}
 
 /* ============================== DATA QUALITY =============================== */
 function assessQuality(a, ladder, source) {
@@ -998,6 +1089,47 @@ async function fetchLive({ providerKey, key, symbol, tf, bars }) {
   if (candles.length < 30) throw new Error(`Only ${candles.length} candles came back. At least 30 are needed before anything can be measured — ask for more bars, or pick a timeframe your plan covers.`);
   return { candles };
 }
+
+/* ============================== ECONOMIC CALENDAR ==========================
+   Scheduled releases come from /api/calendar, which is a server route because
+   no calendar provider sends CORS headers and because a key in the browser is
+   a key you have given away. Nothing is fetched unless asked for, and nothing
+   is displayed that the route did not return. */
+/** The two currencies whose releases can move this pair. */
+function pairCurrencies(label) {
+  const m = String(label).toUpperCase().match(/\b([A-Z]{3})\b[^A-Z]*\b([A-Z]{3})\b/);
+  const known = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "CNY"];
+  const out = m ? [m[1], m[2]].filter((c) => known.includes(c)) : [];
+  return out.length ? [...new Set(out)] : ["USD"];
+}
+
+async function fetchCalendar(days = 7, ccy = ["USD"]) {
+  if (typeof window !== "undefined" && window.location.protocol === "blob:") {
+    throw new Error("BLOCKED: /api/calendar only exists once this is deployed (or running under `vercel dev`). In a preview frame there is no server to call.");
+  }
+  const res = await fetch(`/api/calendar?days=${days}&ccy=${encodeURIComponent(ccy.join(","))}`, { headers: { Accept: "application/json" } });
+  let j;
+  try { j = await res.json(); } catch (e) { throw new Error("The calendar route replied with something that was not JSON."); }
+  if (!res.ok || j.error) throw new Error(j.error || `The calendar route returned HTTP ${res.status}.`);
+  if (!Array.isArray(j.events)) throw new Error("The calendar route returned no event array.");
+  return j;
+}
+
+/** The next high-impact release, and how long until it lands. */
+function nextEvent(events, level = "High") {
+  const now = Date.now();
+  const up = (events || []).filter((e) => e.impact === level && Number.isFinite(e.t) && e.t >= now).sort((a, b) => a.t - b.t);
+  if (!up.length) return null;
+  const e = up[0];
+  const mins = Math.round((e.t - now) / 60000);
+  return { ...e, mins, hours: mins / 60 };
+}
+const untilText = (mins) => {
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  if (h < 24) return m ? `${h}h ${m}m` : `${h}h`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+};
 
 /* ================================== UI BITS ================================ */
 const toneColor = (t) => (t === "bull" ? T.bull : t === "bear" ? T.bear : t === "warn" ? T.warn : t === "info" ? T.info : T.dim);
@@ -1211,6 +1343,10 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
   const volMax = Math.max(0, ...vols);
 
   const labelColor = { HH: T.bull, HL: T.bull, LH: T.bear, LL: T.bear, H: T.dim, L: T.dim };
+  // Past ~220 visible bars, per-bar text stops being readable and starts being noise.
+  const dense = span > 220;
+  const named = new Set([a.sr.sup[0], a.sr.res[0]].filter(Boolean).map((z) => z.name));
+  const liveFvg = a.fvg.zones.find((z) => z.inside) || a.fvg.zones[0];
   const hi_ = hover != null && hover >= 0 && hover < c.length ? hover : null;
   const hk = hi_ != null ? c[hi_] : null;
 
@@ -1268,7 +1404,9 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
       <div className="cwrap" data-drag={dragging ? "1" : "0"}>
         <svg ref={svgRef} width={w} height={H} role="img" aria-label={`Annotated price chart, bars ${start + 1} to ${end} of ${total}`}
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
-          onPointerLeave={(e) => { onUp(e); setHover(null); }}>
+          onLostPointerCapture={() => { drag.current = null; setDragging(false); }}
+          onPointerLeave={() => { if (!drag.current) setHover(null); }}
+          onDoubleClick={() => setView({ span: Math.min(150, total), end: total })}>
           <defs>
             <pattern id="fvgBull" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
               <rect width="7" height="7" fill="rgba(20,192,138,0.07)" />
@@ -1298,7 +1436,7 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
             <g key={"z" + i}>
               <rect x={padL} y={Y(z.hi)} width={plotW} height={Math.max(2, Y(z.lo) - Y(z.hi))}
                 fill={z.side === "support" ? T.bullDim : T.bearDim} stroke={(z.side === "support" ? T.bull : T.bear) + "55"} strokeWidth="1" />
-              <text x={padL + 5} y={Y(z.hi) - 3} fill={z.side === "support" ? T.bull : T.bear} fontSize="9.5" fontFamily="IBM Plex Mono, monospace">{z.name} · {z.touches}×</text>
+              {named.has(z.name) && <text x={padL + 5} y={Y(z.hi) - 3} fill={z.side === "support" ? T.bull : T.bear} fontSize="9.5" fontFamily="IBM Plex Mono, monospace">{z.name} · {z.touches}×</text>}
             </g>
           ))}
 
@@ -1316,15 +1454,17 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
                 <rect x={x0} y={yTop} width={Math.max(6, w - padR - x0)} height={hh}
                   fill={z.kind === "bullish" ? "url(#fvgBull)" : "url(#fvgBear)"}
                   stroke={(z.kind === "bullish" ? T.bull : T.bear) + "66"} strokeWidth="1" />
-                <text x={x0 + 4} y={yTop + hh / 2 + 3} fill={z.kind === "bullish" ? T.bull : T.bear}
-                  fontSize="8.5" fontWeight="700" fontFamily="IBM Plex Mono, monospace">
-                  FVG{z.state === "Partially filled" ? " \u00bd" : ""}
-                </text>
+                {z === liveFvg && (
+                  <text x={x0 + 4} y={yTop + hh / 2 + 3} fill={z.kind === "bullish" ? T.bull : T.bear}
+                    fontSize="8.5" fontWeight="700" fontFamily="IBM Plex Mono, monospace">
+                    FVG{z.state === "Partially filled" ? " \u00bd" : ""}
+                  </text>
+                )}
               </g>
             );
           })}
 
-          {layers.liquidity && a.liq.levels.slice(0, 5).map((l, i) => (
+          {layers.liquidity && a.liq.levels.slice(0, 3).map((l, i) => (
             <g key={"l" + i}>
               <line x1={padL} x2={w - padR} y1={Y(l.price)} y2={Y(l.price)} stroke={T.violet} strokeWidth="1" strokeDasharray="2 4" opacity="0.8" />
               <text x={padL + 5} y={Y(l.price) - 3} fill={T.violet} fontSize="9" fontFamily="IBM Plex Mono, monospace" opacity="0.95">{l.kind}</text>
@@ -1344,7 +1484,7 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
             );
           })}
 
-          {layers.structure && a.pivots.filter((p) => inView(p.i)).map((p, i) => (
+          {layers.structure && !dense && a.pivots.filter((p) => inView(p.i)).map((p, i) => (
             <text key={"p" + i} x={X(idx(p.i))} y={p.type === "H" ? Y(p.price) - 6 : Y(p.price) + 13}
               fill={labelColor[p.label] || T.dim} fontSize="9.5" fontWeight="600" textAnchor="middle" fontFamily="IBM Plex Mono, monospace">{p.label}</text>
           ))}
@@ -1353,7 +1493,7 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
             <g key={"e" + i}>
               <line x1={X(Math.max(0, idx(e.i) - 6))} x2={X(Math.min(span - 1, idx(e.i) + 3))} y1={Y(e.price)} y2={Y(e.price)}
                 stroke={e.dir === "up" ? T.bull : T.bear} strokeWidth="1.2" strokeDasharray="5 3" />
-              <text x={X(idx(e.i)) + 5} y={Y(e.price) - 4} fill={e.dir === "up" ? T.bull : T.bear} fontSize="9" fontWeight="700" fontFamily="IBM Plex Mono, monospace">{e.kind}</text>
+              {!dense && <text x={X(idx(e.i)) + 5} y={Y(e.price) - 4} fill={e.dir === "up" ? T.bull : T.bear} fontSize="9" fontWeight="700" fontFamily="IBM Plex Mono, monospace">{e.kind}</text>}
             </g>
           ))}
 
@@ -1475,7 +1615,7 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
         <span><i style={{ borderColor: T.bull }} />up bar</span>
         <span><i style={{ borderColor: T.bear }} />down bar</span>
         {panes.macd && <><span><i style={{ borderColor: T.info }} />MACD line</span><span><i style={{ borderColor: T.warn }} />signal</span></>}
-        <span style={{ marginLeft: "auto", color: T.faint }}>drag to pan · scroll to zoom · hover for values{a.tfMin < 1440 ? " · times UTC" : ""}</span>
+        <span style={{ marginLeft: "auto", color: T.faint }}>drag to pan · scroll to zoom · double-click to reset · hover for values{a.tfMin < 1440 ? " · times UTC" : ""}</span>
       </div>
     </div>
   );
@@ -1486,7 +1626,13 @@ const NAV_GROUPS = [
   { stage: "Decide", items: [["desk", "Trade desk", "scenarios"], ["chart", "Chart", "analyzer"]] },
   { stage: "Detail", items: [["detail", "Breakdown", "learn"], ["risk", "Risk calc", "risk"], ["journal", "Journal", "journal"]] },
 ];
-const SRC_TABS = [["paste", "Paste OHLC"], ["image", "Screenshot"], ["live", "Live feed"]];
+const PAGE_TITLE = { desk: "Trade desk", chart: "Chart", detail: "Breakdown", risk: "Risk calc", journal: "Journal" };
+const LAYER_KEYS = ["ema", "sr", "sd", "liquidity", "fvg", "structure", "scenario"];
+const LAYER_PRESETS = {
+  clean: { ema: true, sr: false, sd: false, liquidity: false, fvg: false, structure: false, scenario: false },
+  standard: { ema: true, sr: true, sd: false, liquidity: false, fvg: false, structure: true, scenario: false },
+  full: { ema: true, sr: true, sd: true, liquidity: true, fvg: true, structure: true, scenario: true },
+};
 
 /* ================================ MAIN APP ================================= */
 export default function ForexAnalyzer() {
@@ -1495,24 +1641,21 @@ export default function ForexAnalyzer() {
   const [customPair, setCustomPair] = useState("");
   const [tradeTf, setTradeTf] = useState("1H");
   const [htfTf, setHtfTf] = useState("4H");
-  const [dataTf, setDataTf] = useState("1H");
+
   const [source, setSource] = useState("illustrative");
-  const [seedNum, setSeedNum] = useState(7);
-  const [userCandles, setUserCandles] = useState(null);
-  const [parseErrors, setParseErrors] = useState([]);
-  const [paste, setPaste] = useState("");
-  const [imageNote, setImageNote] = useState(null);
+  const seedNum = 7; // the sample series is a fixed placeholder, not a setting
+
   const [openWhy, setOpenWhy] = useState(null);
-  const [layers, setLayers] = useState({ ema: true, sr: true, sd: false, liquidity: false, fvg: true, structure: true, scenario: false });
+  const [layers, setLayers] = useState({ ...LAYER_PRESETS.standard });
   const [checks, setChecks] = useState({});
   const [teach, setTeach] = useState(false);
   const [events, setEvents] = useState([]);
   const [live, setLive] = useState({ provider: "twelvedata", key: "", bars: 500, tf: null, symbol: null, candles: null, fetchedAt: null, status: "idle", error: null });
   const [auto, setAuto] = useState(0);
   const [eventDraft, setEventDraft] = useState({ when: "", name: "", impact: "High" });
-  const [srcTab, setSrcTab] = useState(null);
-  const [folds, setFolds] = useState({ market: true, quality: false });
-  const toggleFold = (k) => setFolds((s) => ({ ...s, [k]: !s[k] }));
+  const [navOpen, setNavOpen] = useState(false);
+  const [cal, setCal] = useState({ status: "idle", events: [], source: null, fetchedAt: null, error: null });
+
 
   const digits = (INSTRUMENTS[pair] || INSTRUMENTS["Custom pair"]).digits;
   const pairLabel = pair === "Custom pair" ? (customPair.trim() || "Custom pair") : pair;
@@ -1520,10 +1663,9 @@ export default function ForexAnalyzer() {
   /* ---- DATA LAYER ---- */
   const raw = useMemo(() => {
     if (source === "live" && live.candles && live.candles.length >= 30) return live.candles;
-    if (source === "user" && userCandles && userCandles.length >= 30) return userCandles;
     return makeIllustrative(pair, tradeTf, 620, seedNum);
-  }, [source, live.candles, userCandles, pair, tradeTf, seedNum]);
-  const nativeTf = source === "live" ? (live.tf || tradeTf) : source === "user" ? dataTf : tradeTf;
+  }, [source, live.candles, pair, tradeTf, seedNum]);
+  const nativeTf = source === "live" ? (live.tf || tradeTf) : tradeTf;
 
   const ratio = TF_MIN[tradeTf] / TF_MIN[nativeTf];
   const tfMismatch = ratio < 1 || !Number.isInteger(ratio);
@@ -1558,7 +1700,7 @@ export default function ForexAnalyzer() {
     try {
       const { candles } = await fetchLive({ providerKey: live.provider, key: live.key.trim(), symbol: pairLabel, tf: tradeTf, bars: Number(live.bars) || 500 });
       setLive((s) => ({ ...s, candles, tf: tradeTf, symbol: pairLabel, fetchedAt: Date.now(), status: "ok", error: null }));
-      setSource("live"); setImageNote(null);
+      setSource("live");
     } catch (e) {
       setLive((s) => ({ ...s, status: "error", error: e.message }));
     }
@@ -1574,268 +1716,160 @@ export default function ForexAnalyzer() {
   const isStale = source === "live" && live.tf && staleMs > TF_MIN[live.tf] * 60000 * 2;
 
   /* ---- input handlers ---- */
-  const loadPaste = () => {
-    const { rows, errors } = parseOHLC(paste);
-    setParseErrors(errors);
-    if (rows.length >= 30) { setUserCandles(rows); setSource("user"); setImageNote(null); }
-    else setParseErrors([`Only ${rows.length} usable rows were read. At least 30 candles are needed before any structure can be assessed.`, ...errors]);
-  };
-  const onImage = (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    setImageNote(f.name);
-    e.target.value = "";
-  };
   const toggleCheck = (k) => setChecks((s) => ({ ...s, [k]: !s[k] }));
 
+  const loadCalendar = useCallback(async (days = 7) => {
+    setCal((s) => ({ ...s, status: "loading", error: null }));
+    try {
+      const j = await fetchCalendar(days, pairCurrencies(pairLabel));
+      setCal({ status: "ok", events: j.events, source: j.source, currencies: j.currencies, fetchedAt: j.fetchedAt || Date.now(), error: null });
+    } catch (e) {
+      setCal((s) => ({ ...s, status: "error", error: e.message }));
+    }
+  }, [pairLabel]);
+
   return (
-    <div className="fx">
+    <div className="fx app" data-nav={navOpen ? "1" : "0"}>
       <style>{CSS}</style>
 
-      <div className="topbar">
-        <div className="topin">
-          <div className="brand">
-            <b style={{ color: T.text }}>FOREX ANALYZER</b>
-            <span className="eyebrow" style={{ letterSpacing: ".1em" }}>scenarios, not predictions</span>
-          </div>
-          <nav className="nav" aria-label="Workflow stages">
-            {NAV_GROUPS.map((g) => {
-              const active = g.items.some(([k]) => k === tab);
-              return (
-                <div className="navgrp" key={g.stage} data-active={active ? "1" : "0"}>
-                  <i>{g.stage}</i>
-                  <div>
-                    {g.items.map(([k, l, ic]) => (
-                      <button key={k} data-on={tab === k ? "1" : "0"} onClick={() => setTab(k)} aria-current={tab === k ? "page" : undefined}>
-                        <Ico name={ic} />{l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </nav>
+      {/* ================================ LEFT RAIL ============================== */}
+      <aside className="rail" aria-label="Navigation and data">
+        <div className="railbrand">
+          <b>FOREX ANALYZER</b>
+          <span className="eyebrow">scenarios, not predictions</span>
         </div>
-        {verdict && (
-          <div className="sigbar">
-            <div className="sigin">
-              <span className="sigact" style={{ background: toneColor(verdict.tone), color: T.ink }}>{verdict.action}</span>
-              <span className="sigfld"><span>Confluence</span><b style={{ color: toneColor(verdict.tone) }}>{verdict.score} vs {verdict.against} of 8</b></span>
-              <span className="sigfld"><span>Trigger</span><b>{verdict.trigger}</b></span>
-              {verdict.invalidation && <span className="sigfld"><span>Invalidation</span><b style={{ color: T.warn }}>{verdict.invalidation}</b></span>}
-              <span className="sigfld"><span>Structure</span><b style={{ color: verdict.ev ? (verdict.ev.dir === "up" ? T.bull : T.bear) : T.dim }}>{verdict.ev ? `${verdict.ev.kind} ${verdict.ev.dir}` : "no BOS"}</b></span>
-              <span className="sigfld"><span>Open FVG</span><b style={{ color: a && a.fvg.zones.some((z) => z.inside) ? T.warn : T.dim }}>{a ? a.fvg.zones.length : 0}{a && a.fvg.zones.some((z) => z.inside) ? " · in one" : ""}</b></span>
-              <button className="why" style={{ marginLeft: "auto" }} onClick={() => { setTab("desk"); setOpenWhy(openWhy === "verdict" ? null : "verdict"); }}>WHY?</button>
+
+        <nav className="railnav" aria-label="Pages">
+          {NAV_GROUPS.map((g) => (
+            <div className="railgrp" key={g.stage}>
+              <i>{g.stage}</i>
+              {g.items.map(([k, l, ic]) => (
+                <button key={k} data-on={tab === k ? "1" : "0"} aria-current={tab === k ? "page" : undefined}
+                  onClick={() => { setTab(k); setNavOpen(false); }}>
+                  <Ico name={ic} />{l}
+                </button>
+              ))}
             </div>
-          </div>
-        )}
-      </div>
+          ))}
+        </nav>
 
-      <div className="shell">
-        <div className="row" style={{ padding: "14px 0 4px", gap: 8 }}>
-          <SourceTag source={source} />
-          {source === "live" && live.fetchedAt && (
-            <span className="tag" style={{ color: isStale ? T.warn : T.bull, borderColor: (isStale ? T.warn : T.bull) + "55" }}>
-              fetched {new Date(live.fetchedAt).toLocaleTimeString()} · {PROVIDERS[live.provider].label}
-            </span>
+        <div className="railsec">
+          <div className="lbl">Instrument</div>
+          <select value={pair} onChange={(e) => setPair(e.target.value)}>{PAIRS.map((p) => <option key={p}>{p}</option>)}</select>
+          {pair === "Custom pair" && (
+            <input style={{ marginTop: 6 }} value={customPair} onChange={(e) => setCustomPair(e.target.value)} placeholder="e.g. EUR/NOK" />
           )}
-          <span className="tag">{pairLabel}</span>
-          <span className="tag">Trading {tfMismatch ? nativeTf : tradeTf}</span>
-          <span className="tag">Higher {htfTf}</span>
-          <span className="tag">{series.length} bars</span>
-          {a && <span className="tag">ATR14 {a.atr.toFixed(digits)} ({a.atrPct.toFixed(2)}%)</span>}
-          {quality && <Pill tone={quality.level === "High" ? "bull" : quality.level === "Medium" ? "warn" : "bear"}>Analysis quality {quality.level}</Pill>}
+          <div className="lbl" style={{ marginTop: 11 }}>Trading timeframe</div>
+          <div className="tfwrap">{TFS.map((t) => <button key={t} className="tf" data-on={tradeTf === t ? "1" : "0"} onClick={() => setTradeTf(t)}>{t}</button>)}</div>
+          <div className="lbl" style={{ marginTop: 11 }}>Higher timeframe</div>
+          <div className="tfwrap">{TFS.map((t) => <button key={t} className="tf" data-on={htfTf === t ? "1" : "0"} onClick={() => setHtfTf(t)}>{t}</button>)}</div>
         </div>
 
-        {source === "illustrative" && (
-          <div className="mt">
-            <Warn level="med">
-              <b>This is illustrative sample data.</b> It is a deterministic synthetic series generated in the browser so the tools have something real to compute on. It is not a market feed and no price here corresponds to a traded price. Paste your own OHLC data in the input panel to analyse a real series.
-            </Warn>
+        <div className="railsec">
+          <div className="spread"><span className="lbl" style={{ margin: 0 }}>Live feed</span><SourceTag source={source} /></div>
+          <select style={{ marginTop: 7 }} value={live.provider} onChange={(e) => setLive((s) => ({ ...s, provider: e.target.value, error: null }))}>
+            {Object.entries(PROVIDERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          {!PROVIDERS[live.provider].serverSide && (
+            <input style={{ marginTop: 6 }} type="password" value={live.key} placeholder="API key" autoComplete="off"
+              onChange={(e) => setLive((s) => ({ ...s, key: e.target.value, error: null }))} />
+          )}
+          <div className="row" style={{ gap: 6, marginTop: 7 }}>
+            <input style={{ width: 78 }} type="number" min="50" max="5000" value={live.bars}
+              onChange={(e) => setLive((s) => ({ ...s, bars: e.target.value }))} aria-label="Bars to pull" />
+            <button className="btn primary" style={{ flex: 1 }} onClick={runFetch} disabled={live.status === "loading"}>
+              {live.status === "loading" ? "Fetching…" : source === "live" ? "Refresh" : "Fetch"}
+            </button>
           </div>
-        )}
-        {isStale && (
-          <div className="mt"><Warn level="med">These candles were fetched {Math.round(staleMs / 60000)} minutes ago, which is more than two {live.tf} bars. Everything below still describes that snapshot, not the market right now. Press refresh.</Warn></div>
-        )}
-        {tfMismatch && (
-          <div className="mt"><Warn level="high">The loaded series is {nativeTf}. A {tradeTf} view cannot be built from it, because you can only combine candles upward, never split them. Analysis is running on {nativeTf} instead.</Warn></div>
-        )}
-
-        <div className="mt sidebyside">
-          {/* ------------------------------- INPUT PANEL ------------------------------- */}
-          <div className="grid side" style={{ gap: 14 }}>
-            <Fold title="Market input" hint={`${pairLabel} · ${tfMismatch ? nativeTf : tradeTf}`} open={folds.market} onToggle={() => toggleFold("market")}>
-              <label><span className="lbl">Currency pair</span>
-                <select value={pair} onChange={(e) => setPair(e.target.value)}>{PAIRS.map((p) => <option key={p}>{p}</option>)}</select>
-              </label>
-              {pair === "Custom pair" && (
-                <label className="mt"><span className="lbl">Name this instrument</span>
-                  <input value={customPair} onChange={(e) => setCustomPair(e.target.value)} placeholder="e.g. EUR/NOK" />
-                </label>
-              )}
-              <div className="mt"><span className="lbl">Trading timeframe</span>
-                <div className="row" style={{ gap: 5 }}>{TFS.map((t) => <button key={t} className="tf" data-on={tradeTf === t ? "1" : "0"} onClick={() => setTradeTf(t)}>{t}</button>)}</div>
-              </div>
-              <div className="mt"><span className="lbl">Higher timeframe</span>
-                <div className="row" style={{ gap: 5 }}>{TFS.map((t) => <button key={t} className="tf" data-on={htfTf === t ? "1" : "0"} onClick={() => setHtfTf(t)}>{t}</button>)}</div>
-              </div>
-              <p className="note mt">The higher timeframe sets the context you trade with or against. The trading timeframe is where you read structure and levels.</p>
-            </Fold>
-
-            {/* One source at a time: the controls for the other two stay out of the way. */}
-            <Card title="Data source" right={<SourceTag source={source} />}>
-              <div className="seg">
-                {SRC_TABS.map(([k, l]) => (
-                  <button key={k} data-on={srcTab === k ? "1" : "0"} onClick={() => setSrcTab(srcTab === k ? null : k)}>{l}</button>
-                ))}
-              </div>
-
-              {source === "live" && live.fetchedAt && (
-                <div className="row mt" style={{ gap: 7 }}>
-                  <span className="tag" style={{ color: isStale ? T.warn : T.bull, borderColor: (isStale ? T.warn : T.bull) + "55" }}>
-                    {live.candles.length} {live.tf} bars · {new Date(live.fetchedAt).toLocaleTimeString()}
-                  </span>
-                  <button className="btn" onClick={runFetch} disabled={live.status === "loading"}>{live.status === "loading" ? "Fetching…" : "Refresh"}</button>
-                  <button className="btn" onClick={() => { setSource("illustrative"); setAuto(0); }}>Disconnect</button>
-                </div>
-              )}
-              {source === "user" && userCandles && (
-                <div className="row mt" style={{ gap: 7 }}>
-                  <span className="tag" style={{ color: T.info, borderColor: T.info + "55" }}>{userCandles.length} pasted {dataTf} bars</span>
-                  <button className="btn" onClick={() => { setSource("illustrative"); setUserCandles(null); setParseErrors([]); }}>Back to sample data</button>
-                </div>
-              )}
-
-              {srcTab === null && (
-                <>
-                  <p className="note mt">
-                    {source === "illustrative"
-                      ? "Running on illustrative sample data. Pick a source above to load real candles — the chart and every reading recompute from whatever you load."
-                      : "Source controls are collapsed. Pick a tab above to change how data is loaded."}
-                  </p>
-                  {source === "illustrative" && (
-                    <div className="row mt" style={{ gap: 7 }}>
-                      <button className="btn" onClick={() => setSeedNum((s) => s + 1)}>New sample series</button>
-                      <span className="note" style={{ fontSize: 11.5 }}>a different synthetic series to practise on</span>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {srcTab === "paste" && (
-                <div className="mt">
-                  <div className="lbl">Paste OHLC candles</div>
-                  <textarea rows={5} value={paste} onChange={(e) => setPaste(e.target.value)}
-                    placeholder={"One candle per line, oldest first.\nopen,high,low,close\nor date,open,high,low,close,volume\n\n1.0812,1.0834,1.0808,1.0829\n1.0829,1.0841,1.0822,1.0836"} />
-                  <div className="row mt" style={{ gap: 8 }}>
-                    <button className="btn primary" onClick={loadPaste} disabled={!paste.trim()}>Load candles</button>
-                  </div>
-                  {source === "user" && (
-                    <label className="mt"><span className="lbl">Timeframe of the pasted candles</span>
-                      <select value={dataTf} onChange={(e) => setDataTf(e.target.value)}>{TFS.map((t) => <option key={t}>{t}</option>)}</select>
-                    </label>
-                  )}
-                  {parseErrors.length > 0 && (
-                    <div className="mt"><Warn level="high"><b>Could not read every line.</b><ul style={{ margin: "6px 0 0 16px", padding: 0 }}>{parseErrors.map((e, i) => <li key={i}>{e}</li>)}</ul></Warn></div>
-                  )}
-                </div>
-              )}
-
-              {srcTab === "image" && (
-                <div className="mt">
-                  <div className="lbl">Chart screenshot</div>
-                  <input type="file" accept="image/*" onChange={onImage} style={{ padding: 6 }} />
-                  {imageNote ? (
-                    <div className="mt"><Warn level="high">
-                      <b>Insufficient chart information — upload a clearer chart or provide OHLC data.</b>
-                      <p className="mt" style={{ fontSize: 12.5 }}>Received <span className="mono">{imageNote}</span>. This tool reads numbers, not pictures: it cannot measure prices off an image, so it will not guess a pair, a price, or a level from one. Export the candles from your platform and paste them instead, and every level on this page becomes measurable rather than estimated.</p>
-                    </Warn></div>
-                  ) : (
-                    <p className="note mt">An image is accepted only to tell you what it cannot do: nothing on this page is ever measured off a picture.</p>
-                  )}
-                </div>
-              )}
-
-              {srcTab === "live" && (
-                <div className="mt">
-                  <div className="grid" style={{ gap: 9, gridTemplateColumns: "1fr 1fr" }}>
-                    <label><span className="lbl">Provider</span>
-                      <select value={live.provider} onChange={(e) => setLive((s) => ({ ...s, provider: e.target.value, error: null }))}>
-                        {Object.entries(PROVIDERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                      </select>
-                    </label>
-                    <label><span className="lbl">Bars to pull</span>
-                      <input type="number" min="50" max="5000" value={live.bars} onChange={(e) => setLive((s) => ({ ...s, bars: e.target.value }))} />
-                    </label>
-                  </div>
-                  {!PROVIDERS[live.provider].serverSide && (
-                    <label className="mt"><span className="lbl">API key</span>
-                      <input type="password" value={live.key} placeholder="paste your key" autoComplete="off"
-                        onChange={(e) => setLive((s) => ({ ...s, key: e.target.value, error: null }))} />
-                    </label>
-                  )}
-                  <p className="note" style={{ marginTop: 5, fontSize: 11.5 }}>{PROVIDERS[live.provider].keyHint}{!PROVIDERS[live.provider].serverSide && <> Free key from {PROVIDERS[live.provider].site}. The key stays in this page's memory only — it is never saved, and never leaves your browser except in the request to {PROVIDERS[live.provider].label}.</>}</p>
-                  <div className="row mt" style={{ gap: 8 }}>
-                    <button className="btn primary" onClick={runFetch} disabled={live.status === "loading"}>
-                      {live.status === "loading" ? "Fetching…" : source === "live" ? "Refresh" : `Fetch ${pairLabel} ${tradeTf}`}
-                    </button>
-                  </div>
-                  {source === "live" && (
-                    <div className="row mt" style={{ gap: 5 }}>
-                      <span className="lbl" style={{ margin: 0 }}>Auto-refresh</span>
-                      {[[0, "Off"], [60, "60s"], [300, "5m"], [900, "15m"]].map(([v, l]) => (
-                        <button key={v} className="tf" data-on={auto === v ? "1" : "0"} onClick={() => setAuto(v)}>{l}</button>
-                      ))}
-                    </div>
-                  )}
-                  {auto > 0 && <p className="note" style={{ marginTop: 6, fontSize: 11.5 }}>Each refresh spends one API call. On a free tier of a few calls per minute, 60s is close to the limit if you are also using the key elsewhere.</p>}
-                  {live.error && (
-                    <div className="mt"><Warn level={live.error.startsWith("BLOCKED") ? "med" : "high"}>
-                      {live.error.startsWith("BLOCKED") ? <><b>Blocked by the sandbox.</b> {live.error.replace("BLOCKED: ", "")}</> : <><b>Fetch failed.</b> {live.error}</>}
-                    </Warn></div>
-                  )}
-                  {source === "live" && live.status === "ok" && (
-                    <div className="mt"><Warn level="info"><b>Connected.</b> {live.candles.length} {live.tf} candles for {live.symbol} from {PROVIDERS[live.provider].label}, last close {last(live.candles).c.toFixed(digits)}. Everything on this page now recomputes from that series.</Warn></div>
-                  )}
-                  <p className="note mt" style={{ fontSize: 11.5 }}>The data layer accepts <span className="mono">{"{symbol, timeframe, candles:[{t,o,h,l,c,v}]}"}</span>, so any provider returning OHLC can be added the same way.</p>
-                </div>
-              )}
-            </Card>
-
-            {quality && (
-              <Fold title="Analysis quality" open={folds.quality} onToggle={() => toggleFold("quality")}
-                right={<Pill tone={quality.level === "High" ? "bull" : quality.level === "Medium" ? "warn" : "bear"} solid>{quality.level}</Pill>}>
-                <div className="ledger">
-                  {quality.pts.map((p, i) => (
-                    <div className="led" key={i}>
-                      <span className="dot" style={{ background: p.ok ? T.bull : T.warn }} />
-                      <span style={{ color: p.ok ? T.text : T.dim }}>{p.text}</span><span />
-                    </div>
-                  ))}
-                </div>
-                {quality.level !== "High" && (
-                  <p className="note mt">Analysis confidence is {quality.level.toLowerCase()} because {quality.pts.filter((p) => !p.ok).length} of the {quality.max} evidence checks are not met. Treat every reading below as provisional.</p>
-                )}
-              </Fold>
-            )}
+          <div className="lbl" style={{ marginTop: 11 }}>Auto-refresh</div>
+          <div className="tfwrap">
+            {[[0, "Off"], [60, "60s"], [300, "5m"], [900, "15m"]].map(([v, l]) => (
+              <button key={v} className="tf" data-on={auto === v ? "1" : "0"} onClick={() => setAuto(v)}>{l}</button>
+            ))}
           </div>
+          {live.error && (
+            <p className="note" style={{ marginTop: 8, color: T.bear, fontSize: 11.5 }}>
+              {live.error.startsWith("BLOCKED") ? live.error.replace("BLOCKED: ", "") : live.error}
+            </p>
+          )}
+          {!PROVIDERS[live.provider].serverSide && (
+            <p className="note" style={{ marginTop: 8, fontSize: 11 }}>{PROVIDERS[live.provider].keyHint} The key stays in this page's memory — never saved, never sent anywhere but {PROVIDERS[live.provider].label}.</p>
+          )}
+        </div>
 
-          {/* --------------------------------- MAIN ---------------------------------- */}
-          <div className="grid main" style={{ gap: 14 }}>
-            {!a && <Card title="Not enough data"><p className="note">At least 30 candles are needed before structure, indicators or zones can be computed. Load more data.</p></Card>}
+        <div className="railfoot">
+          <div className="spread"><span className="lbl" style={{ margin: 0 }}>Loaded</span><span className="mono" style={{ fontSize: 11.5 }}>{series.length} bars</span></div>
+          {live.fetchedAt && <div className="spread" style={{ marginTop: 4 }}><span className="lbl" style={{ margin: 0 }}>Fetched</span><span className="mono" style={{ fontSize: 11.5, color: isStale ? T.warn : T.dim }}>{new Date(live.fetchedAt).toLocaleTimeString()}</span></div>}
+          {quality && (
+            <button className="qbtn" onClick={() => { setTab("detail"); setOpenWhy("quality"); }}>
+              <span className="lbl" style={{ margin: 0 }}>Data quality</span>
+              <Pill tone={quality.level === "High" ? "bull" : quality.level === "Medium" ? "warn" : "bear"}>{quality.level}</Pill>
+            </button>
+          )}
+        </div>
+      </aside>
+      <div className="scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
 
-            {a && tab === "desk" && <DeskTab {...{ a, led, bias, status, scen, verdict, digits, htf, pair, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, checks, toggleCheck, openWhy, setOpenWhy, setTab }} />}
+      {/* ================================= CONTENT =============================== */}
+      <main className="content">
+        <div className="stickytop">
+          <div className="chead">
+            <button className="burger" onClick={() => setNavOpen((v) => !v)} aria-label="Open navigation" aria-expanded={navOpen}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            </button>
+            <h2>{PAGE_TITLE[tab]}</h2>
+            <span className="tag hide-sm">{pairLabel} · {tfMismatch ? nativeTf : tradeTf} · higher {htfTf}</span>
+            <button className="btn refresh" onClick={runFetch} disabled={live.status === "loading"}>
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+                <path d="M20 11a8 8 0 10-2.3 5.7M20 5v6h-6" />
+              </svg>
+              {live.status === "loading" ? "Refreshing…" : "Refresh data"}
+            </button>
+          </div>
+          {verdict && (
+            <div className="sigbar">
+              <div className="sigin">
+                <span className="sigact" style={{ background: toneColor(verdict.tone), color: T.ink }}>{verdict.action}</span>
+                <span className="sigfld"><span>Confluence</span><b style={{ color: toneColor(verdict.tone) }}>{verdict.score} vs {verdict.against} of 8</b></span>
+                <span className="sigfld"><span>Trigger</span><b>{verdict.trigger}</b></span>
+                {verdict.invalidation && <span className="sigfld"><span>Invalidation</span><b style={{ color: T.warn }}>{verdict.invalidation}</b></span>}
+                <button className="why" style={{ marginLeft: "auto" }} onClick={() => { setTab("desk"); setOpenWhy(openWhy === "verdict" ? null : "verdict"); }}>WHY?</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="shell">
+          {source === "illustrative" && (
+            <div style={{ paddingTop: 14 }}>
+              <Warn level="med">
+                <b>This is illustrative sample data.</b> A deterministic synthetic series generated in the browser so the tools have something real to compute on. It is not a market feed and no price here corresponds to a traded price. Press <b>Refresh data</b> to fetch a live series.
+              </Warn>
+            </div>
+          )}
+          {isStale && (
+            <div className="mt"><Warn level="med">These candles were fetched {Math.round(staleMs / 60000)} minutes ago, which is more than two {live.tf} bars. Everything below still describes that snapshot, not the market right now. Press refresh.</Warn></div>
+          )}
+          {tfMismatch && (
+            <div className="mt"><Warn level="high">The loaded series is {nativeTf}. A {tradeTf} view cannot be built from it, because you can only combine candles upward, never split them. Analysis is running on {nativeTf} instead.</Warn></div>
+          )}
+          {!a && (
+            <div className="mt"><Warn level="high">Not enough candles to analyse. At least 30 are needed before any level, pivot or reading can be computed.</Warn></div>
+          )}
+
+          <div className="grid" style={{ gap: 14, marginTop: 14 }}>
+            {a && tab === "desk" && <DeskTab {...{ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, checks, toggleCheck, openWhy, setOpenWhy, setTab, cal, loadCalendar }} />}
             {a && tab === "chart" && <ChartTab {...{ a, digits, layers, setLayers, scenarioLines, ladder, htfTf, tradeTf: tfMismatch ? nativeTf : tradeTf, openWhy, setOpenWhy }} />}
-            {a && tab === "detail" && <DetailTab {...{ a, led, scen, bias, status, ladder, htf, digits, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, htfTf, openWhy, setOpenWhy, teach, setTeach, source }} />}
-            {a && tab === "risk" && <RiskTab {...{ a, scen, digits, pair, pairLabel, events, setEvents, eventDraft, setEventDraft }} />}
+            {a && tab === "detail" && <DetailTab {...{ a, led, scen, bias, status, ladder, htf, digits, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, htfTf, openWhy, setOpenWhy, teach, setTeach, source, quality }} />}
+            {a && tab === "risk" && <RiskTab {...{ a, scen, digits, pair, pairLabel, events, setEvents, eventDraft, setEventDraft, cal, loadCalendar }} />}
             {tab === "journal" && <JournalTab {...{ pairLabel, tradeTf, digits }} />}
           </div>
-        </div>
 
-        <footer style={{ marginTop: 28, paddingTop: 16, borderTop: `1px solid ${T.line}` }}>
-          <p className="note">Educational tool. Nothing here is a recommendation to buy or sell, and no reading on this page is a forecast. Every figure is computed from the candles currently loaded — change the data and every figure changes. Trading leveraged products can lose more than the amount you put in.</p>
-        </footer>
-      </div>
+          <footer style={{ marginTop: 28, paddingTop: 16, borderTop: `1px solid ${T.line}` }}>
+            <p className="note">Educational tool. Nothing here is a recommendation to buy or sell, and no reading on this page is a forecast. Every figure is computed from the candles currently loaded — change the data and every figure changes. Trading leveraged products can lose more than the amount you put in.</p>
+          </footer>
+        </div>
+      </main>
     </div>
   );
 }
@@ -1885,15 +1919,29 @@ function ScenarioBody({ s, digits }) {
    One page for the decision: buy or sell or wait, how strong the case is on
    each side, the two scenarios, and the numbers that follow from them. Every
    long explanation lives on the Breakdown tab instead. */
-function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, pair, pairLabel, tradeTf, checks, toggleCheck, openWhy, setOpenWhy, setTab }) {
+function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair, pairLabel, tradeTf, checks, toggleCheck, openWhy, setOpenWhy, setTab, cal, loadCalendar }) {
   const favoured = led.bull === led.bear ? (verdict && verdict.side ? verdict.side : "bull") : led.bull > led.bear ? "bull" : "bear";
   const [scTab, setScTab] = useState(favoured);
   const [chkSide, setChkSide] = useState(favoured);
   const [openChk, setOpenChk] = useState(false);
   const [f, setF] = useState({ balance: 10000, riskPct: 1 });
+  const [openTest, setOpenTest] = useState(false);
+  const [test, setTest] = useState(null);
+  const [running, setRunning] = useState(false);
 
   // Follow the data: if the evidence flips sides, the page flips with it.
   useEffect(() => { setScTab(favoured); setChkSide(favoured); }, [favoured]);
+  // A result belongs to the series it was measured on, and to no other.
+  useEffect(() => { setTest(null); }, [a]);
+
+  const runTest = () => {
+    setRunning(true);
+    setTimeout(() => {
+      try { setTest(replaySignals({ candles: a.candles, tfMin: a.tfMin, htfMin: TF_MIN[htfTf], digits })); }
+      catch (err) { setTest({ ok: false, reason: `The replay could not finish: ${err.message}` }); }
+      setRunning(false);
+    }, 30);
+  };
 
   const dir = scTab === "none" ? favoured : scTab;
   const setup = useMemo(() => buildSetup(a, led, scen, dir), [a, led, scen, dir]);
@@ -1903,11 +1951,18 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, pair, pairL
 
   const list = chkSide === "bull" ? BULL_CHECKS : BEAR_CHECKS;
   const done = list.filter(([k]) => checks[k]).length;
+  const ev = useMemo(() => nextEvent(cal.events), [cal.events]);
   const SC = [["bull", "Bullish", T.bull], ["bear", "Bearish", T.bear], ["none", "No trade", T.warn]];
 
   return (
     <>
       {/* ------------------------------- the call -------------------------------- */}
+      {ev && ev.hours <= 24 && (
+        <Warn level={ev.hours <= 2 ? "high" : "med"}>
+          <b>{ev.country} {ev.name} in {untilText(ev.mins)}</b> ({ev.date}{ev.time ? ` · ${ev.time}` : ""}). Technical levels hold poorly across a scheduled release and spreads widen through it, so the stop you calculated may not be the stop you get.
+          {!ev.timeFromFeed && " The date is from the release calendar; the clock time is the agency's customary one, so confirm it."}
+        </Warn>
+      )}
       <Card accent={toneColor(verdict ? verdict.tone : bias.tone)}>
         <div className="spread" style={{ flexWrap: "wrap", gap: 18 }}>
           <div style={{ minWidth: 240, flex: "1 1 260px" }}>
@@ -1927,6 +1982,11 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, pair, pairL
             <div className="spread" style={{ marginTop: 9 }}><span className="lbl" style={{ margin: 0 }}>Bearish evidence</span><span className="mono" style={{ color: T.bear, fontWeight: 600 }}>{led.bear}/8</span></div>
             <Bar value={led.bear} max={8} color={T.bear} />
             <button className="why" style={{ marginTop: 9 }} onClick={() => setTab("detail")}>SEE THE 8 POINTS →</button>
+            {cal.status === "idle" && (
+              <button className="why" style={{ marginTop: 9, marginLeft: 6 }} onClick={() => loadCalendar(7)}>CHECK CALENDAR →</button>
+            )}
+            {cal.status === "loading" && <span className="tag" style={{ marginLeft: 6 }}>loading calendar…</span>}
+            {cal.status === "ok" && !ev && <span className="tag" style={{ marginTop: 9, marginLeft: 6 }}>no high-impact release in 7 days</span>}
           </div>
         </div>
 
@@ -2021,6 +2081,55 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, pair, pairL
         )}
       </Card>
 
+      {/* --------------------------- signal measurement -------------------------- */}
+      <Fold title="How has this signal actually done?" open={openTest} onToggle={() => setOpenTest((v) => !v)}
+        right={<Pill tone={test && test.ok ? (test.decided >= 30 ? "info" : "warn") : "flat"}>{test && test.ok ? `${test.filled} trades` : "not measured"}</Pill>}>
+        <p className="note">The score above is a count of agreeing evidence that nobody has checked against outcomes. This replays the loaded candles bar by bar — rebuilding the whole read from only the bars that existed at each point, then recording what price did over the next 40 bars. It is the difference between a claim and a measurement.</p>
+        <div className="row mt" style={{ gap: 8 }}>
+          <button className="btn primary" onClick={runTest} disabled={running}>{running ? "Replaying…" : test ? "Run again" : "Replay this signal on the loaded data"}</button>
+          <span className="note" style={{ fontSize: 11.5 }}>{a.candles.length} bars · takes a moment</span>
+        </div>
+
+        {test && !test.ok && <div className="mt"><Warn level="med">{test.reason}</Warn></div>}
+
+        {test && test.ok && (
+          <>
+            <div className="grid g4 mt" style={{ gap: 10 }}>
+              <Stat label="Signals raised" value={String(test.signals)} sub={`${test.unfilled} never reached the entry zone`} />
+              <Stat label="Trades filled" value={String(test.filled)} sub={`${test.wins}W / ${test.losses}L / ${test.opens} unresolved`} />
+              <Stat label="Hit rate" value={test.hit != null ? `${(test.hit * 100).toFixed(0)}%` : "—"}
+                tone={test.decided < 30 ? "warn" : test.hit >= 0.5 ? "bull" : "bear"} sub={`of ${test.decided} that resolved`} />
+              <Stat label="Average result" value={test.expectancy != null ? `${test.expectancy >= 0 ? "+" : ""}${test.expectancy.toFixed(2)}R` : "—"}
+                tone={test.expectancy > 0 ? "bull" : "bear"} sub="per filled trade, before costs" />
+            </div>
+            <div className="scroll mt">
+              <table className="tbl">
+                <thead><tr><th>Side</th><th>Filled</th><th>Won</th><th>Lost</th><th>Hit rate</th><th>Avg R</th></tr></thead>
+                <tbody>
+                  {[["Bullish", test.bull, "bull"], ["Bearish", test.bear, "bear"]].map(([l, d, tone]) => (
+                    <tr key={l}>
+                      <td><Pill tone={tone}>{l}</Pill></td>
+                      <td className="num">{d.n}</td><td className="num">{d.w}</td><td className="num">{d.l}</td>
+                      <td className="num">{d.hit != null ? `${(d.hit * 100).toFixed(0)}%` : "—"}</td>
+                      <td className="num" style={{ color: d.r > 0 ? T.bull : d.r < 0 ? T.bear : T.dim }}>{d.r != null ? `${d.r >= 0 ? "+" : ""}${d.r.toFixed(2)}` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {test.decided < 30 && (
+              <div className="mt"><Warn level="high">
+                <b>{test.decided} resolved trades is not a sample.</b> At this count the hit rate could move ten points either way on one more trade. Nothing here supports a conclusion — load a longer series before reading anything into it.
+              </Warn></div>
+            )}
+            <div className="mt"><Warn level="med">
+              <b>What this is not.</b> One instrument, one period, and the same data the rules were written against — that is in-sample, and in-sample results are optimistic by construction. Spread, commission, slippage and swap are all excluded, and a losing bar that touches both the stop and the target is counted as a loss. A real edge has to survive a period the rules never saw.
+            </Warn></div>
+            <p className="note mt">Method: replayed every {test.step === 1 ? "bar" : `${test.step} bars`} from bar {test.warmup} onward. Entry is the mid of the mapped zone as a resting order, stop beyond the invalidating swing, exit at the first mapped target, giving up after {test.horizon} bars. Overlapping signals are skipped while a trade is still open.</p>
+          </>
+        )}
+      </Fold>
+
       {/* ------------------------------ checklist -------------------------------- */}
       <Fold title="Confirmation checklist" open={openChk} onToggle={() => setOpenChk((v) => !v)}
         right={<Pill tone={done >= 6 ? "bull" : "flat"}>{done}/{list.length} ticked</Pill>}>
@@ -2053,16 +2162,27 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, pair, pairL
 
 /* ================================= CHART TAB =============================== */
 function ChartTab({ a, digits, layers, setLayers, scenarioLines, ladder, htfTf, tradeTf, openWhy, setOpenWhy }) {
+  const [custom, setCustom] = useState(false);
   const L = (k, label) => (
     <button key={k} className="tf" data-on={layers[k] ? "1" : "0"} onClick={() => setLayers((s) => ({ ...s, [k]: !s[k] }))}>{label}</button>
   );
+  const preset = Object.keys(LAYER_PRESETS).find((k) => LAYER_KEYS.every((x) => !!LAYER_PRESETS[k][x] === !!layers[x]));
   return (
     <>
       <Card title="Annotated chart" right={<span className="tag">{a.candles.length} bars loaded</span>}>
-        <div className="row" style={{ gap: 5, marginBottom: 10 }}>
-          <span className="lbl" style={{ margin: 0 }}>Layers</span>
-          {L("structure", "Structure")}{L("sr", "S/R zones")}{L("fvg", "FVG")}{L("sd", "Supply/demand")}{L("liquidity", "Liquidity")}{L("ema", "EMAs")}{L("scenario", "Scenario levels")}
+        <div className="row" style={{ gap: 6, marginBottom: 10 }}>
+          <div className="seg" style={{ width: 300 }}>
+            {[["clean", "Price only"], ["standard", "Standard"], ["full", "Everything"]].map(([k, l]) => (
+              <button key={k} data-on={preset === k ? "1" : "0"} onClick={() => setLayers({ ...LAYER_PRESETS[k] })}>{l}</button>
+            ))}
+          </div>
+          <button className="why" onClick={() => setCustom((v) => !v)}>{custom ? "HIDE LAYERS" : "PICK LAYERS"}</button>
         </div>
+        {custom && (
+          <div className="row" style={{ gap: 5, marginBottom: 10 }}>
+            {L("structure", "Structure")}{L("sr", "S/R zones")}{L("fvg", "FVG")}{L("sd", "Supply/demand")}{L("liquidity", "Liquidity")}{L("ema", "EMAs")}{L("scenario", "Scenario levels")}
+          </div>
+        )}
         <ChartPanel a={a} digits={digits} layers={layers} scenarioLines={scenarioLines} />
         <p className="note mt">Every label comes from the data: HH/HL/LH/LL from confirmed swing pivots, BOS and CHOCH from closes through a prior swing, zones from clustered pivot prices. RSI, MACD and volume read off the same candles — switch them on above the chart.</p>
       </Card>
@@ -2115,7 +2235,7 @@ function ChartTab({ a, digits, layers, setLayers, scenarioLines, ladder, htfTf, 
 }
 
 /* ================================ BREAKDOWN ================================ */
-function DetailTab({ a, led, scen, bias, status, ladder, htf, digits, pairLabel, tradeTf, htfTf, openWhy, setOpenWhy, teach, setTeach, source }) {
+function DetailTab({ a, led, scen, bias, status, ladder, htf, digits, pairLabel, tradeTf, htfTf, openWhy, setOpenWhy, teach, setTeach, source, quality }) {
   const rows = [
     ["Higher timeframe", htf?.available ? htf.read : "Unavailable", htf?.available ? `The ${htf.tf} series built from this data reads ${htf.structure.toLowerCase()} structure with ${htf.strength.toLowerCase()} trend strength.` : `A ${htfTf} series cannot be built from the loaded data (${htf?.reason || "unavailable"}).`],
     ["Market structure", a.structRead, a.structure.detail],
@@ -2130,6 +2250,23 @@ function DetailTab({ a, led, scen, bias, status, ladder, htf, digits, pairLabel,
 
   return (
     <>
+      {quality && (
+        <Card title="Data quality" accent={quality.level === "High" ? T.bull : quality.level === "Medium" ? T.warn : T.bear}
+          right={<Pill tone={quality.level === "High" ? "bull" : quality.level === "Medium" ? "warn" : "bear"} solid>{quality.level}</Pill>}>
+          <div className="ledger">
+            {quality.pts.map((p, i) => (
+              <div className="led" key={i}>
+                <span className="dot" style={{ background: p.ok ? T.bull : T.warn }} />
+                <span style={{ color: p.ok ? T.text : T.dim }}>{p.text}</span><span />
+              </div>
+            ))}
+          </div>
+          {quality.level !== "High" && (
+            <p className="note mt">{quality.pts.filter((p) => !p.ok).length} of the {quality.max} evidence checks are not met, so every reading on these pages is provisional. Loading more bars from the live feed is usually what fixes it.</p>
+          )}
+        </Card>
+      )}
+
       <Card title="Confluence ledger — where the 8 points come from"
         right={<Why id="ledger" open={openWhy} setOpen={setOpenWhy}>Each row scores independently and the maximum is eight. Structure and higher timeframe are worth two because they change slowly and set context; the rest are worth one because they change bar to bar. Every point ships with the evidence that produced it, so you can disagree with a line rather than with a black box.</Why>}>
         <div className="scroll">
@@ -2385,7 +2522,7 @@ function autoState(key, a, led, htf) {
 }
 
 /* ================================= RISK TAB ================================ */
-function RiskTab({ a, scen, digits, pair, pairLabel, events, setEvents, eventDraft, setEventDraft }) {
+function RiskTab({ a, scen, digits, pair, pairLabel, events, setEvents, eventDraft, setEventDraft, cal, loadCalendar }) {
   const sup = a.sr.sup[0], res = a.sr.res[0];
   const [f, setF] = useState({ balance: 10000, riskPct: 1, entry: a.price, stop: sup ? sup.lo : a.price - a.atr * 1.5, target: res ? res.mid : a.price + a.atr * 3 });
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value === "" ? "" : Number(e.target.value) }));
@@ -2445,8 +2582,61 @@ function RiskTab({ a, scen, digits, pair, pairLabel, events, setEvents, eventDra
         <p className="note mt">ATR is the average distance price travels in a single bar on this timeframe. A stop closer than one ATR sits inside ordinary noise: it is not protecting you from being wrong, it is guaranteeing you get taken out by being early. When ATR rises, the same stop in price terms is a smaller stop in market terms — position size has to come down to hold risk constant.</p>
       </Card>
 
-      <Card title="Fundamental risk">
-        <Warn level="med">Economic calendar unavailable — verify major events before trading. No calendar feed is connected, and this tool will not invent dates or releases.</Warn>
+      <Card title="Economic calendar">
+        <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+          <button className="btn primary" onClick={() => loadCalendar(7)} disabled={cal.status === "loading"}>
+            {cal.status === "loading" ? "Loading…" : cal.status === "ok" ? "Refresh calendar" : `Load calendar for ${pairLabel}`}
+          </button>
+          {cal.status === "ok" && <span className="tag">{cal.events.length} releases · {(cal.currencies || ["USD"]).join(" + ")} · next 7 days</span>}
+          {cal.status === "ok" && cal.fetchedAt && <span className="tag">loaded {new Date(cal.fetchedAt).toLocaleTimeString()}</span>}
+        </div>
+
+        {cal.status === "idle" && (
+          <Warn level="med">No calendar feed loaded yet. Nothing on this page invents a date or a release — press the button and the scheduled releases come from the server route, or log the events you have verified yourself below.</Warn>
+        )}
+        {cal.status === "error" && (
+          <Warn level={cal.error.startsWith("BLOCKED") ? "med" : "high"}>
+            {cal.error.startsWith("BLOCKED") ? <><b>Blocked by the sandbox.</b> {cal.error.replace("BLOCKED: ", "")}</> : <><b>Calendar unavailable.</b> {cal.error}</>}
+          </Warn>
+        )}
+        {cal.status === "ok" && (
+          cal.events.length === 0 ? (
+            <Warn level="med">The feed returned no scheduled releases for these currencies in the next 7 days. That is the feed's answer, not an assurance that the week is quiet — check a second source before trading through it.</Warn>
+          ) : (
+            <>
+              <div className="scroll">
+                <table className="tbl">
+                  <thead><tr><th>When</th><th>Ccy</th><th>Release</th><th>Impact</th><th>Forecast</th><th>Previous</th></tr></thead>
+                  <tbody>
+                    {cal.events.slice(0, 14).map((e, i) => {
+                      const mins = Number.isFinite(e.t) ? Math.round((e.t - Date.now()) / 60000) : null;
+                      return (
+                        <tr key={i}>
+                          <td className="num">{e.date}{e.time ? <div className="note" style={{ fontSize: 11 }}>{e.time}{!e.timeFromFeed ? " *" : ""}</div> : null}</td>
+                          <td className="mono" style={{ fontSize: 11.5 }}>{e.country}</td>
+                          <td>{e.name}{mins != null && mins >= 0 && mins < 2880 ? <div className="note" style={{ fontSize: 11 }}>in {untilText(mins)}</div> : null}</td>
+                          <td><Pill tone={e.impact === "High" ? "bear" : e.impact === "Medium" ? "warn" : "flat"}>{e.impact}</Pill></td>
+                          <td className="num">{e.forecast ?? "—"}</td>
+                          <td className="num">{e.previous ?? "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="note mt">Source: {cal.source}. {cal.events.some((e) => !e.timeFromFeed) && "* the feed supplies the date only — the clock time is the issuing agency's customary release time, so confirm it against the agency before sizing a trade around it. "}Releases the feed does not carry are simply absent; none are inferred.</p>
+              {(() => {
+                const soon = nextEvent(cal.events);
+                return soon && soon.hours <= 24 ? (
+                  <div className="mt"><Warn level={soon.hours <= 2 ? "high" : "med"}>
+                    <b>{soon.country} {soon.name} in {untilText(soon.mins)}.</b> Across a scheduled release, the stop distance you sized from ATR is measured on bars that did not contain a release. Spreads widen, slippage stops being theoretical, and a level that held all week means very little for those few minutes.
+                  </Warn></div>
+                ) : null;
+              })()}
+            </>
+          )
+        )}
+        <div className="hr" />
         <p className="note mt">Scheduled releases that routinely move currency pairs, regardless of what the chart shows beforehand:</p>
         <div className="grid g2 mt" style={{ gap: 8 }}>
           {[["Interest-rate decisions", "The central bank's policy rate and the statement around it. Usually the single largest scheduled mover for a currency."],
