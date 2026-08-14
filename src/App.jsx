@@ -125,6 +125,33 @@ const CSS = `
 .hr{height:1px;background:var(--line);margin:13px 0}
 .g2{grid-template-columns:1fr 1fr}
 
+/* chart layer key */
+.lbar{display:flex;flex-wrap:wrap;gap:5px}
+.lchip{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;
+  font-size:11.5px;color:var(--dim);background:${T.ink}}
+.lchip:hover{border-color:${T.line2};color:var(--text)}
+.lchip[data-on="1"]{border-color:${T.line2};background:var(--panel2);color:var(--text)}
+.lchip[data-on="0"] .sw{filter:grayscale(1);opacity:.35}
+.lchip em{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--faint);white-space:nowrap}
+.sw{width:12px;height:12px;border-radius:3px;flex:none;border:1px solid rgba(255,255,255,.14)}
+
+/* rail: next releases */
+.evrow{display:flex;align-items:center;gap:7px;padding:5px 0;border-top:1px solid var(--line);font-size:11.5px}
+.evrow:first-child{border-top:none}
+.evrow .dot{width:6px;height:6px;border-radius:50%;flex:none}
+.evrow .mono{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--faint);flex:none}
+.evname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)}
+.evin{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--faint);flex:none}
+.evrow[data-hot="1"] .evname{color:var(--text)}
+.evrow[data-hot="1"] .evin{color:${T.bear};font-weight:600}
+.specs{display:grid;gap:9px;margin-bottom:12px}
+.spec{border:1px solid var(--line);border-left:2px solid ${T.line2};border-radius:8px;padding:10px 12px}
+.spec[data-on="0"]{opacity:.55}
+.spechead{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.spechead b{font-size:12.5px;color:var(--text)}
+.spec p{font-size:12.5px;line-height:1.6;color:var(--dim)}
+@media (min-width:900px){.specs{grid-template-columns:1fr 1fr}}
+
 /* ------------------------------------------------------- app shell layout -- */
 .app{display:flex;min-height:100vh;align-items:flex-start}
 .rail{position:fixed;left:0;top:0;bottom:0;width:262px;z-index:60;display:flex;flex-direction:column;
@@ -1103,14 +1130,31 @@ function pairCurrencies(label) {
   return out.length ? [...new Set(out)] : ["USD"];
 }
 
+/** Error payloads arrive as a string from our route and as an object from the
+    hosting platform ({error:{code,message}}). Both have to end up readable. */
+function errText(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  if (typeof x === "object") {
+    const parts = [x.code, x.message || x.error || x.reason].filter((v) => typeof v === "string");
+    if (parts.length) return parts.join(" — ");
+    try { return JSON.stringify(x).slice(0, 220); } catch (e) { return String(x); }
+  }
+  return String(x);
+}
+
 async function fetchCalendar(days = 7, ccy = ["USD"]) {
   if (typeof window !== "undefined" && window.location.protocol === "blob:") {
     throw new Error("BLOCKED: /api/calendar only exists once this is deployed (or running under `vercel dev`). In a preview frame there is no server to call.");
   }
   const res = await fetch(`/api/calendar?days=${days}&ccy=${encodeURIComponent(ccy.join(","))}`, { headers: { Accept: "application/json" } });
   let j;
-  try { j = await res.json(); } catch (e) { throw new Error("The calendar route replied with something that was not JSON."); }
-  if (!res.ok || j.error) throw new Error(j.error || `The calendar route returned HTTP ${res.status}.`);
+  try { j = await res.json(); } catch (e) {
+    throw new Error(res.status === 404
+      ? "There is no /api/calendar route on this server. It exists only on a deployment (or under `vercel dev`) — a plain `npm run dev` serves the page without any serverless functions."
+      : `The calendar route replied with HTTP ${res.status} and something that was not JSON.`);
+  }
+  if (!res.ok || j.error) throw new Error(errText(j.error) || errText(j.message) || `The calendar route returned HTTP ${res.status}.`);
   if (!Array.isArray(j.events)) throw new Error("The calendar route returned no event array.");
   return j;
 }
@@ -1205,6 +1249,19 @@ const ICON_PATHS = {
   learn: <><path d="M4 5.5A2.5 2.5 0 016.5 3H19v15H6.5A2.5 2.5 0 004 20.5z" /><path d="M19 18v3H6.5" /></>,
   journal: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
 };
+/** A colour key that matches how the layer actually appears on the chart. */
+function Swatch({ sp }) {
+  const c = sp.swatch;
+  const style = sp.hatch
+    ? { background: `repeating-linear-gradient(45deg, ${c[0]} 0 2px, transparent 2px 5px), repeating-linear-gradient(45deg, ${c[1]} 0 2px, transparent 2px 5px)`, backgroundSize: "100% 50%, 100% 50%", backgroundPosition: "top, bottom", backgroundRepeat: "no-repeat" }
+    : c.length === 3
+      ? { background: `linear-gradient(180deg, ${c[0]} 0 33%, ${c[1]} 33% 66%, ${c[2]} 66% 100%)` }
+      : c.length === 2
+        ? { background: `linear-gradient(180deg, ${c[1]} 0 50%, ${c[0]} 50% 100%)` }
+        : { background: c[0] };
+  return <span className="sw" style={style} aria-hidden="true" />;
+}
+
 function Ico({ name }) {
   return (
     <svg className="ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
@@ -1628,6 +1685,50 @@ const NAV_GROUPS = [
 ];
 const PAGE_TITLE = { desk: "Trade desk", chart: "Chart", detail: "Breakdown", risk: "Risk calc", journal: "Journal" };
 const LAYER_KEYS = ["ema", "sr", "sd", "liquidity", "fvg", "structure", "scenario"];
+const LAYER_SPEC = [
+  {
+    key: "ema", label: "EMAs", swatch: ["#6EA8FF", "#F2A93B", "#A97BFF"],
+    what: "20, 50 and 200 exponential moving averages.",
+    rule: "Plotted from the close of every loaded bar. Their order — price above 20 above 50 above 200, or the mirror — is what the moving-average row on the Breakdown page scores. Current values sit in the legend under the chart.",
+    count: (a) => `${[20, 50, 200].filter((p) => a.ema[p].some((v) => v != null)).length} of 3 plotted`,
+  },
+  {
+    key: "sr", label: "S/R zones", swatch: [T.bull, T.bear],
+    what: "Support and resistance bands, named S1/R1 outward from price.",
+    rule: "Swing pivots at a similar price are clustered together — within 0.55 ATR, or 4 basis points of price, whichever is wider — and drawn as a band rather than a line. The label carries how many times price reacted there. Only the nearest support and resistance are labelled on the chart; the full table is on the Chart page below.",
+    count: (a) => `${a.sr.all.length} zones · ${a.sr.sup.length} below, ${a.sr.res.length} above`,
+  },
+  {
+    key: "structure", label: "Structure", swatch: [T.bull, T.bear],
+    what: "HH / HL / LH / LL pivot labels, and BOS / CHOCH break markers.",
+    rule: "A pivot is confirmed only once it is the highest high (or lowest low) of the two bars either side of it — which means the most recent bars can never carry a label yet. BOS or CHOCH is marked where a candle closed through a prior swing. Labels switch off past 220 visible bars, where they stop being readable.",
+    count: (a) => `${a.pivots.length} pivots · ${a.events.length} breaks`,
+  },
+  {
+    key: "fvg", label: "FVG", swatch: [T.bull, T.bear], hatch: true,
+    what: "Fair value gaps — three-bar imbalances price has not filled.",
+    rule: "Bar 1's high sits below bar 3's low, or the mirror, leaving a gap the middle bar tore through. Gaps smaller than 0.22 ATR are ignored as noise. Hatched forward to the right edge until price trades back through; only the gap currently being tested carries a tag.",
+    count: (a) => `${a.fvg.zones.length} unfilled${a.fvg.zones.some((z) => z.inside) ? " · price in one" : ""}`,
+  },
+  {
+    key: "sd", label: "Supply / demand", swatch: [T.bull, T.bear],
+    what: "The base candle a strong move originated from, extended forward.",
+    rule: "A tight candle — body under 0.65 ATR — followed by a move of at least 1.6 ATR within three bars. The premise is that orders left unfilled at the origin may still rest there. Overlapping zones of the same kind are merged, newest kept.",
+    count: (a) => `${a.sd.length} zones`,
+  },
+  {
+    key: "liquidity", label: "Liquidity", swatch: [T.violet],
+    what: "Equal highs and lows, plus the previous session's extremes.",
+    rule: "Two swing points within 0.28 ATR of each other count as equal, and the prior day's high and low are added from the candle timestamps. These are the prices where stop orders tend to rest — not levels to trade off, but places price often reaches for. The three nearest are drawn.",
+    count: (a) => `${a.liq.levels.length} levels${a.liq.sweep ? " · one swept recently" : ""}`,
+  },
+  {
+    key: "scenario", label: "Scenario levels", swatch: [T.warn],
+    what: "Entry, target and invalidation prices from the Trade desk.",
+    rule: "Taken from the scenario the evidence currently favours, so they move as the read changes. They are consequences of the analysis, not inputs to it.",
+    count: (a, lines) => `${lines.length} levels`,
+  },
+];
 const LAYER_PRESETS = {
   clean: { ema: true, sr: false, sd: false, liquidity: false, fvg: false, structure: false, scenario: false },
   standard: { ema: true, sr: true, sd: false, liquidity: false, fvg: false, structure: true, scenario: false },
@@ -1718,6 +1819,13 @@ export default function ForexAnalyzer() {
   /* ---- input handlers ---- */
   const toggleCheck = (k) => setChecks((s) => ({ ...s, [k]: !s[k] }));
 
+  const upcoming = useMemo(() => {
+    const now = Date.now();
+    return (cal.events || [])
+      .filter((e) => Number.isFinite(e.t) && e.t >= now - 30 * 60000)
+      .map((e) => ({ ...e, mins: Math.round((e.t - now) / 60000) }));
+  }, [cal.events]);
+
   const loadCalendar = useCallback(async (days = 7) => {
     setCal((s) => ({ ...s, status: "loading", error: null }));
     try {
@@ -1794,6 +1902,38 @@ export default function ForexAnalyzer() {
           )}
           {!PROVIDERS[live.provider].serverSide && (
             <p className="note" style={{ marginTop: 8, fontSize: 11 }}>{PROVIDERS[live.provider].keyHint} The key stays in this page's memory — never saved, never sent anywhere but {PROVIDERS[live.provider].label}.</p>
+          )}
+        </div>
+
+        <div className="railsec">
+          <div className="spread">
+            <span className="lbl" style={{ margin: 0 }}>Economic calendar</span>
+            {cal.status === "ok" && <span className="tag">{(cal.currencies || ["USD"]).join("+")}</span>}
+          </div>
+          <button className="btn" style={{ width: "100%", marginTop: 7 }} onClick={() => loadCalendar(7)} disabled={cal.status === "loading"}>
+            {cal.status === "loading" ? "Loading…" : cal.status === "ok" ? "Refresh calendar" : "Load calendar"}
+          </button>
+
+          {cal.status === "idle" && <p className="note" style={{ marginTop: 7, fontSize: 11 }}>Scheduled releases for {pairLabel}. Nothing is fetched until you ask.</p>}
+          {cal.status === "error" && <p className="note" style={{ marginTop: 7, fontSize: 11, color: T.bear }}>{cal.error}</p>}
+          {cal.status === "ok" && (
+            upcoming.length === 0 ? (
+              <p className="note" style={{ marginTop: 7, fontSize: 11 }}>No releases for these currencies in the next 7 days.</p>
+            ) : (
+              <>
+                <div style={{ marginTop: 8 }}>
+                  {upcoming.slice(0, 5).map((e, i) => (
+                    <div className="evrow" key={i} data-hot={e.impact === "High" && e.mins <= 240 ? "1" : "0"}>
+                      <span className="dot" style={{ background: e.impact === "High" ? T.bear : e.impact === "Medium" ? T.warn : T.line2 }} />
+                      <span className="mono">{e.country}</span>
+                      <span className="evname">{e.name}</span>
+                      <span className="evin">{e.mins < 0 ? "now" : untilText(e.mins)}</span>
+                    </div>
+                  ))}
+                </div>
+                <button className="why" style={{ marginTop: 8 }} onClick={() => { setTab("risk"); setNavOpen(false); }}>FULL CALENDAR →</button>
+              </>
+            )
           )}
         </div>
 
@@ -2163,24 +2303,35 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair
 /* ================================= CHART TAB =============================== */
 function ChartTab({ a, digits, layers, setLayers, scenarioLines, ladder, htfTf, tradeTf, openWhy, setOpenWhy }) {
   const [custom, setCustom] = useState(false);
-  const L = (k, label) => (
-    <button key={k} className="tf" data-on={layers[k] ? "1" : "0"} onClick={() => setLayers((s) => ({ ...s, [k]: !s[k] }))}>{label}</button>
-  );
   const preset = Object.keys(LAYER_PRESETS).find((k) => LAYER_KEYS.every((x) => !!LAYER_PRESETS[k][x] === !!layers[x]));
   return (
     <>
       <Card title="Annotated chart" right={<span className="tag">{a.candles.length} bars loaded</span>}>
-        <div className="row" style={{ gap: 6, marginBottom: 10 }}>
-          <div className="seg" style={{ width: 300 }}>
-            {[["clean", "Price only"], ["standard", "Standard"], ["full", "Everything"]].map(([k, l]) => (
-              <button key={k} data-on={preset === k ? "1" : "0"} onClick={() => setLayers({ ...LAYER_PRESETS[k] })}>{l}</button>
-            ))}
-          </div>
-          <button className="why" onClick={() => setCustom((v) => !v)}>{custom ? "HIDE LAYERS" : "PICK LAYERS"}</button>
+        <div className="lbar">
+          {LAYER_SPEC.map((sp) => (
+            <button key={sp.key} className="lchip" data-on={layers[sp.key] ? "1" : "0"} aria-pressed={!!layers[sp.key]}
+              onClick={() => setLayers((s) => ({ ...s, [sp.key]: !s[sp.key] }))}>
+              <Swatch sp={sp} />
+              <span>{sp.label}</span>
+              <em>{sp.count(a, scenarioLines)}</em>
+            </button>
+          ))}
+        </div>
+        <div className="row" style={{ gap: 6, margin: "8px 0 12px" }}>
+          <span className="lbl" style={{ margin: 0 }}>Preset</span>
+          {[["clean", "Price only"], ["standard", "Standard"], ["full", "Everything"]].map(([k, l]) => (
+            <button key={k} className="tf" data-on={preset === k ? "1" : "0"} onClick={() => setLayers({ ...LAYER_PRESETS[k] })}>{l}</button>
+          ))}
+          <button className="why" style={{ marginLeft: "auto" }} onClick={() => setCustom((v) => !v)}>{custom ? "HIDE SPECS" : "WHAT DOES EACH LAYER MEAN?"}</button>
         </div>
         {custom && (
-          <div className="row" style={{ gap: 5, marginBottom: 10 }}>
-            {L("structure", "Structure")}{L("sr", "S/R zones")}{L("fvg", "FVG")}{L("sd", "Supply/demand")}{L("liquidity", "Liquidity")}{L("ema", "EMAs")}{L("scenario", "Scenario levels")}
+          <div className="specs">
+            {LAYER_SPEC.map((sp) => (
+              <div className="spec" key={sp.key} data-on={layers[sp.key] ? "1" : "0"}>
+                <div className="spechead"><Swatch sp={sp} /><b>{sp.label}</b><span className="tag">{sp.count(a, scenarioLines)}</span>{!layers[sp.key] && <span className="tag" style={{ opacity: .6 }}>hidden</span>}</div>
+                <p><b style={{ color: T.text, fontWeight: 500 }}>{sp.what}</b> {sp.rule}</p>
+              </div>
+            ))}
           </div>
         )}
         <ChartPanel a={a} digits={digits} layers={layers} scenarioLines={scenarioLines} />
@@ -2584,15 +2735,15 @@ function RiskTab({ a, scen, digits, pair, pairLabel, events, setEvents, eventDra
 
       <Card title="Economic calendar">
         <div className="row" style={{ gap: 8, marginBottom: 10 }}>
-          <button className="btn primary" onClick={() => loadCalendar(7)} disabled={cal.status === "loading"}>
-            {cal.status === "loading" ? "Loading…" : cal.status === "ok" ? "Refresh calendar" : `Load calendar for ${pairLabel}`}
+          <button className="btn" onClick={() => loadCalendar(7)} disabled={cal.status === "loading"}>
+            {cal.status === "loading" ? "Loading…" : cal.status === "ok" ? "Refresh calendar" : "Load calendar"}
           </button>
           {cal.status === "ok" && <span className="tag">{cal.events.length} releases · {(cal.currencies || ["USD"]).join(" + ")} · next 7 days</span>}
           {cal.status === "ok" && cal.fetchedAt && <span className="tag">loaded {new Date(cal.fetchedAt).toLocaleTimeString()}</span>}
         </div>
 
         {cal.status === "idle" && (
-          <Warn level="med">No calendar feed loaded yet. Nothing on this page invents a date or a release — press the button and the scheduled releases come from the server route, or log the events you have verified yourself below.</Warn>
+          <Warn level="med">No calendar feed loaded yet. Load it from the left rail (or the button above) and the scheduled releases come from the server route — nothing here invents a date. You can also log events you have verified yourself, below.</Warn>
         )}
         {cal.status === "error" && (
           <Warn level={cal.error.startsWith("BLOCKED") ? "med" : "high"}>
