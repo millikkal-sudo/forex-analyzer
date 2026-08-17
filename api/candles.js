@@ -43,7 +43,10 @@ export default async function handler(req, res) {
       if (!key) return res.status(500).json({ error: "TWELVEDATA_API_KEY is not set on the server. Add it in Vercel -> Settings -> Environment Variables, then redeploy." });
       const interval = TD_INTERVAL[tf];
       if (!interval) return res.status(400).json({ error: `Twelve Data has no ${tf} interval.` });
-      const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${bars}&format=JSON&apikey=${encodeURIComponent(key)}`;
+      // timezone=UTC is not optional: without it Twelve Data answers in the
+      // exchange's own timezone and the "Z" appended below silently shifts
+      // every candle by hours.
+      const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${bars}&timezone=UTC&order=ASC&format=JSON&apikey=${encodeURIComponent(key)}`;
       const r = await fetch(url);
       const j = await r.json();
       if (j.status === "error") return res.status(502).json({ error: j.message || `Provider error ${j.code}` });
@@ -73,9 +76,24 @@ export default async function handler(req, res) {
 
     if (candles.length < 30) return res.status(502).json({ error: `Only ${candles.length} usable candles came back. Ask for more bars, or pick a timeframe your plan covers.` });
 
-    // Cache for a fraction of one bar so a refresh burst does not burn the rate limit.
-    res.setHeader("Cache-Control", `s-maxage=${Math.max(20, Math.round(TF_MIN[tf] * 6))}, stale-while-revalidate=60`);
-    return res.status(200).json({ candles, provider, symbol, tf, fetchedAt: Date.now() });
+    /* Freshness beats rate-limit thrift. The old rule cached for a tenth of a
+       bar, which on 1H meant serving a six-minute-old snapshot and calling it
+       live. Ten seconds absorbs a double-click without ever costing minutes.  */
+    res.setHeader("Cache-Control", "s-maxage=10, stale-while-revalidate=20");
+
+    /* The newest candle from any provider is the one still forming. Say so
+       explicitly rather than leaving the client to guess from timestamps. */
+    const barMs = TF_MIN[tf] * 60000;
+    const serverNow = Date.now();
+    const lastBarT = candles[candles.length - 1].t;
+    const forming = lastBarT + barMs > serverNow;
+
+    return res.status(200).json({
+      candles, provider, symbol, tf,
+      fetchedAt: serverNow, serverNow, lastBarT, barMs, forming,
+      // how far behind the feed is, ignoring the bar that is legitimately open
+      lagMs: Math.max(0, serverNow - (lastBarT + (forming ? 0 : barMs))),
+    });
   } catch (e) {
     return res.status(502).json({ error: `Upstream request failed: ${e.message}` });
   }
