@@ -1267,7 +1267,10 @@ async function fetchLive({ providerKey, key, symbol, tf, bars }) {
   }
   let res;
   try {
-    res = await fetch(url, { headers: { Accept: "application/json" } });
+    // A cached response is indistinguishable from a stale market. Both the
+    // browser cache and any proxy in between have to be told no.
+    const bust = (url.includes("?") ? "&" : "?") + "_=" + Date.now();
+    res = await fetch(url + bust, { headers: { Accept: "application/json" }, cache: "no-store" });
   } catch (e) {
     throw new Error(
       "BLOCKED: the request never left the page. This is almost always the sandbox this dashboard runs in refusing outbound calls, or the provider not sending CORS headers — it is not a problem with your key. Run this file in your own browser or a local dev server and the same button will work. Until then, use the paste box below."
@@ -1281,7 +1284,9 @@ async function fetchLive({ providerKey, key, symbol, tf, bars }) {
   try { json = await res.json(); } catch (e) { throw new Error("The provider replied with something that was not JSON."); }
   const candles = p.parse(json);
   if (candles.length < 30) throw new Error(`Only ${candles.length} candles came back. At least 30 are needed before anything can be measured — ask for more bars, or pick a timeframe your plan covers.`);
-  return { candles };
+  // Server time, when the route supplies it, is the only clock both sides agree
+  // on — a browser clock that is two minutes out makes a live feed look stale.
+  return { candles, serverNow: Number.isFinite(json.serverNow) ? json.serverNow : null, lagMs: Number.isFinite(json.lagMs) ? json.lagMs : null };
 }
 
 /* ============================== ECONOMIC CALENDAR ==========================
@@ -1335,6 +1340,13 @@ function nextEvent(events, level = "High") {
   const mins = Math.round((e.t - now) / 60000);
   return { ...e, mins, hours: mins / 60 };
 }
+/** mm:ss for anything under an hour, then h/m — used for bar and lag clocks. */
+const untilClock = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 3600) return `${Math.floor(s / 60)}:${pad2(s % 60)}`;
+  const h = Math.floor(s / 3600);
+  return `${h}h ${Math.floor((s % 3600) / 60)}m`;
+};
 const untilText = (mins) => {
   if (mins < 60) return `${mins} min`;
   const h = Math.floor(mins / 60), m = mins % 60;
@@ -1923,6 +1935,8 @@ export default function ForexAnalyzer() {
   const [auto, setAuto] = useState(0);
   const [eventDraft, setEventDraft] = useState({ when: "", name: "", impact: "High" });
   const [navOpen, setNavOpen] = useState(false);
+  const [clock, setClock] = useState(Date.now());
+  const [closedOnly, setClosedOnly] = useState(true);
   const [cal, setCal] = useState({ status: "idle", events: [], source: null, fetchedAt: null, error: null });
 
 
@@ -1930,10 +1944,23 @@ export default function ForexAnalyzer() {
   const pairLabel = pair === "Custom pair" ? (customPair.trim() || "Custom pair") : pair;
 
   /* ---- DATA LAYER ---- */
-  const raw = useMemo(() => {
+  const rawAll = useMemo(() => {
     if (source === "live" && live.candles && live.candles.length >= 30) return live.candles;
     return makeIllustrative(pair, tradeTf, 620, seedNum);
   }, [source, live.candles, pair, tradeTf, seedNum]);
+
+  /* The newest candle a provider sends is still open: its high, low and close
+     will all change before it finishes. Analysing it makes structure signals
+     repaint — a BOS that appears at 14:32 and is gone by 14:35. Dropping it
+     costs freshness in the readings and buys the property that a signal, once
+     printed, stays printed. The live price is kept separately for display. */
+  const livePrice = source === "live" && rawAll.length ? last(rawAll).c : null;
+  const raw = useMemo(() => {
+    if (!closedOnly || source !== "live" || rawAll.length < 31) return rawAll;
+    const bm = TF_MIN[live.tf || tradeTf] * 60000;
+    const lastT = last(rawAll).t;
+    return lastT + bm > Date.now() ? rawAll.slice(0, -1) : rawAll;
+  }, [rawAll, closedOnly, source, live.tf, tradeTf, clock]);
   const nativeTf = source === "live" ? (live.tf || tradeTf) : tradeTf;
 
   const ratio = TF_MIN[tradeTf] / TF_MIN[nativeTf];
@@ -1967,8 +1994,10 @@ export default function ForexAnalyzer() {
     if (!PROVIDERS[live.provider].serverSide && !live.key.trim()) { setLive((s) => ({ ...s, status: "error", error: "Enter your API key first." })); return; }
     setLive((s) => ({ ...s, status: "loading", error: null }));
     try {
-      const { candles } = await fetchLive({ providerKey: live.provider, key: live.key.trim(), symbol: pairLabel, tf: tradeTf, bars: Number(live.bars) || 500 });
-      setLive((s) => ({ ...s, candles, tf: tradeTf, symbol: pairLabel, fetchedAt: Date.now(), status: "ok", error: null }));
+      const { candles, serverNow, lagMs } = await fetchLive({ providerKey: live.provider, key: live.key.trim(), symbol: pairLabel, tf: tradeTf, bars: Number(live.bars) || 500 });
+      const at = Date.now();
+      setLive((s) => ({ ...s, candles, tf: tradeTf, symbol: pairLabel, fetchedAt: at, status: "ok", error: null,
+        skew: serverNow != null ? serverNow - at : 0, lagMs }));
       setSource("live");
     } catch (e) {
       setLive((s) => ({ ...s, status: "error", error: e.message }));
@@ -1976,16 +2005,32 @@ export default function ForexAnalyzer() {
   }, [live.provider, live.key, live.bars, pairLabel, tradeTf]);
 
   useEffect(() => {
-    if (!auto || source !== "live") return;
-    const id = setInterval(runFetch, auto * 1000);
-    return () => clearInterval(id);
-  }, [auto, source, runFetch]);
+    if (!auto || source !== "live" || !live.candles.length) return;
+    // Refetching mid-bar returns the same forming candle. Land four seconds
+    // after the next close instead, when there is genuinely something new.
+    const barMs = TF_MIN[live.tf || tradeTf] * 60000;
+    const lastT = last(live.candles).t;
+    const toClose = lastT + barMs + 4000 - Date.now();
+    const wait = Math.max(5000, Math.min(auto * 1000, toClose > 0 ? toClose : auto * 1000));
+    const id = setTimeout(runFetch, wait);
+    return () => clearTimeout(id);
+  }, [auto, source, runFetch, live.candles, live.tf, tradeTf, clock]);
 
-  const staleMs = live.fetchedAt ? Date.now() - live.fetchedAt : 0;
-  const isStale = source === "live" && live.tf && staleMs > TF_MIN[live.tf] * 60000 * 2;
+  /* ---- freshness, measured against the bar clock rather than the fetch clock ---- */
+  const barMs = TF_MIN[live.tf || tradeTf] * 60000;
+  const lastBarT = source === "live" && live.candles.length ? last(live.candles).t : null;
+  const serverClock = clock + (live.skew || 0);
+  const barCloseAt = lastBarT != null ? lastBarT + barMs : null;
+  const barForming = barCloseAt != null && barCloseAt > serverClock;
+  const msToClose = barCloseAt != null ? Math.max(0, barCloseAt - serverClock) : null;
+  // a feed is late only once the bar it should have delivered is itself finished
+  const feedLagMs = barCloseAt != null && !barForming ? serverClock - barCloseAt : 0;
+  const isStale = source === "live" && feedLagMs > barMs;
+  const staleMs = feedLagMs;
 
   /* ---- input handlers ---- */
   const toggleCheck = (k) => setChecks((s) => ({ ...s, [k]: !s[k] }));
+  useEffect(() => { const id = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(id); }, []);
 
   const upcoming = useMemo(() => {
     const now = Date.now();
@@ -2057,6 +2102,28 @@ export default function ForexAnalyzer() {
               {live.status === "loading" ? "Fetching…" : source === "live" ? "Refresh" : "Fetch"}
             </button>
           </div>
+          {source === "live" && (
+            <div style={{ marginTop: 10, padding: "9px 10px", border: `1px solid ${T.line}`, borderRadius: 7 }}>
+              <div className="spread">
+                <span className="lbl" style={{ margin: 0 }}>Live price</span>
+                <span className="mono" style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{livePrice != null ? livePrice.toFixed(digits) : "—"}</span>
+              </div>
+              <div className="spread" style={{ marginTop: 4 }}>
+                <span className="lbl" style={{ margin: 0 }}>{barForming ? "Bar closes in" : "Feed behind by"}</span>
+                <span className="mono" style={{ fontSize: 11.5, color: isStale ? T.warn : T.dim }}>
+                  {barForming ? untilClock(msToClose) : feedLagMs > 0 ? untilClock(feedLagMs) : "—"}
+                </span>
+              </div>
+              <button className="chk" style={{ marginTop: 7, padding: 0 }} onClick={() => setClosedOnly((v) => !v)} aria-pressed={closedOnly}>
+                <span className="box" style={{ background: closedOnly ? T.info : "transparent", color: T.ink, borderColor: closedOnly ? T.info : T.line2 }}>{closedOnly ? "✓" : ""}</span>
+                <span style={{ fontSize: 11.5 }}>Analyse closed bars only
+                  <small style={{ display: "block", color: T.faint, fontSize: 10.5, marginTop: 2 }}>
+                    {closedOnly ? "Signals cannot repaint. Readings are one bar behind." : "Includes the forming bar — readings can change before it closes."}
+                  </small>
+                </span>
+              </button>
+            </div>
+          )}
           <div className="lbl" style={{ marginTop: 11 }}>Auto-refresh</div>
           <div className="tfwrap">
             {[[0, "Off"], [60, "60s"], [300, "5m"], [900, "15m"]].map(([v, l]) => (
@@ -2127,6 +2194,14 @@ export default function ForexAnalyzer() {
             </button>
             <h2>{PAGE_TITLE[tab]}</h2>
             <span className="tag hide-sm">{pairLabel} · {tfMismatch ? nativeTf : tradeTf} · higher {htfTf}</span>
+            {source === "live" && livePrice != null && (
+              <span className="tag" style={{ color: T.text, borderColor: T.line2 }}>
+                {livePrice.toFixed(digits)}
+                <span style={{ color: isStale ? T.warn : T.faint, marginLeft: 7 }}>
+                  {barForming ? `bar ${untilClock(msToClose)}` : `late ${untilClock(feedLagMs)}`}
+                </span>
+              </span>
+            )}
             <button className="btn refresh" onClick={runFetch} disabled={live.status === "loading"}>
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
                 <path d="M20 11a8 8 0 10-2.3 5.7M20 5v6h-6" />
@@ -2156,7 +2231,9 @@ export default function ForexAnalyzer() {
             </div>
           )}
           {isStale && (
-            <div className="mt"><Warn level="med">These candles were fetched {Math.round(staleMs / 60000)} minutes ago, which is more than two {live.tf} bars. Everything below still describes that snapshot, not the market right now. Press refresh.</Warn></div>
+            <div className="mt"><Warn level="med">
+              <b>The feed is {untilClock(feedLagMs)} behind.</b> The most recent {live.tf} candle finished {untilClock(feedLagMs)} ago and no newer one has arrived, so this is not a picture of the market right now. Press <b>Refresh data</b>; if the lag persists, your plan is serving delayed data for this symbol rather than real-time.
+            </Warn></div>
           )}
           {tfMismatch && (
             <div className="mt"><Warn level="high">The loaded series is {nativeTf}. A {tradeTf} view cannot be built from it, because you can only combine candles upward, never split them. Analysis is running on {nativeTf} instead.</Warn></div>
