@@ -940,6 +940,173 @@ function replaySignals({ candles, tfMin, htfMin, digits, horizon = 40, warmup = 
   };
 }
 
+/* ================================ SCALPING =================================
+   Scalping is not swing analysis on a faster chart. Two things dominate it and
+   neither appears anywhere else in this tool: the spread you pay against a
+   target measured in a handful of pips, and whether the session is liquid
+   enough for the move to exist at all. Both are modelled here explicitly, and
+   a setup that fails either is reported as untradeable rather than shown with
+   a caveat. */
+const SESSIONS = [
+  { key: "sydney", name: "Sydney", from: 21, to: 6 },
+  { key: "tokyo", name: "Tokyo", from: 0, to: 9 },
+  { key: "london", name: "London", from: 7, to: 16 },
+  { key: "newyork", name: "New York", from: 12, to: 21 },
+];
+
+/** Which FX sessions are open at a given instant, and how much that helps. */
+function sessionState(now = Date.now()) {
+  const d = new Date(now);
+  const h = d.getUTCHours() + d.getUTCMinutes() / 60;
+  const isIn = (s) => (s.from < s.to ? h >= s.from && h < s.to : h >= s.from || h < s.to);
+  const open = SESSIONS.filter(isIn);
+  const has = (k) => open.some((s) => s.key === k);
+  const overlap = has("london") && has("newyork");
+  const toOverlap = ((12 - h + 24) % 24) * 60;
+
+  let quality, note;
+  if (overlap) { quality = "Best"; note = "London and New York are both open. This is where the day's volume and the tightest spreads are, and where a few pips of movement is normal rather than lucky."; }
+  else if (has("london")) { quality = "Good"; note = "London is open. Enough volume for intraday ranges to develop, though the largest moves usually wait for New York."; }
+  else if (has("newyork")) { quality = "Good"; note = "New York is open without London. Liquidity thins through the afternoon and trends often stall."; }
+  else if (open.length) { quality = "Thin"; quality = "Thin"; note = `${open.map((s) => s.name).join(" and ")} only. Ranges are narrow and spreads wider, so the cost of trading takes a larger share of a small target.`; }
+  else { quality = "Closed"; note = "No major session is open. Spreads are at their widest and moves are unreliable — this is the worst time of day to pay a spread."; }
+  return { hUtc: h, open, overlap, quality, note, toOverlap, utc: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC` };
+}
+
+/**
+ * Two intraday setups, both defined only in terms of what the candles show.
+ *   Continuation — trend on this timeframe, pullback into the 20 EMA, close back through it.
+ *   Range fade   — no trend, price at the edge of its own recent range with a stretched RSI.
+ * Everything is then measured against the spread before it is called tradeable.
+ */
+function buildScalp(a, { spreadPips, pip, at = Date.now(), event = null }) {
+  const out = { applicable: a.tfMin <= 15, tfMin: a.tfMin, session: sessionState(at), gates: [], model: null, side: null };
+  if (!out.applicable) return out;
+
+  const c = a.candles, n = c.length, px = a.price, atr = a.atr;
+  const win = c.slice(-40);
+  const rangeHi = Math.max(...win.map((k) => k.h)), rangeLo = Math.min(...win.map((k) => k.l));
+  const rangeMid = (rangeHi + rangeLo) / 2, rangeSize = rangeHi - rangeLo;
+  const e20 = a.ema[20][n - 1], e50 = a.ema[50][n - 1];
+  const rsi = a.rsiVal;
+  const last3 = c.slice(-3);
+  out.micro = { rangeHi, rangeLo, rangeMid, rangeSize, e20, e50 };
+
+  const upTrend = e20 != null && e50 != null && e20 > e50 && px > e50;
+  const downTrend = e20 != null && e50 != null && e20 < e50 && px < e50;
+  const flat = e20 != null && e50 != null && Math.abs(e20 - e50) < atr * 0.3;
+
+  let s = null;
+  // --- continuation: the pullback has to have actually happened and been rejected
+  if (upTrend && rsi != null && rsi > 40 && rsi < 72 && Math.min(...last3.map((k) => k.l)) <= e20 + atr * 0.25 && px > e20) {
+    const stop = Math.min(...last3.map((k) => k.l)) - atr * 0.15;
+    s = { model: "Continuation", side: "bull", entry: px, stop, why: `The 20 EMA is above the 50 and price pulled back into the 20 within the last three bars, then closed back above it at ${px.toFixed(a.digits || 5)}.` };
+  } else if (downTrend && rsi != null && rsi < 60 && rsi > 28 && Math.max(...last3.map((k) => k.h)) >= e20 - atr * 0.25 && px < e20) {
+    const stop = Math.max(...last3.map((k) => k.h)) + atr * 0.15;
+    s = { model: "Continuation", side: "bear", entry: px, stop, why: "The 20 EMA is below the 50 and price rallied into the 20 within the last three bars, then closed back below it." };
+  // --- fade: only where there is no trend to fight
+  } else if (flat && rangeSize > atr * 2 && rsi != null && px <= rangeLo + rangeSize * 0.2 && rsi < 32) {
+    s = { model: "Range fade", side: "bull", entry: px, stop: rangeLo - atr * 0.3, why: `No trend on this timeframe and price is in the bottom fifth of its own 40-bar range with RSI at ${rsi.toFixed(0)}.` };
+  } else if (flat && rangeSize > atr * 2 && rsi != null && px >= rangeHi - rangeSize * 0.2 && rsi > 68) {
+    s = { model: "Range fade", side: "bear", entry: px, stop: rangeHi + atr * 0.3, why: `No trend on this timeframe and price is in the top fifth of its own 40-bar range with RSI at ${rsi.toFixed(0)}.` };
+  }
+
+  if (!s) {
+    out.model = "No setup";
+    out.reason = upTrend || downTrend
+      ? "There is a trend but price is not at a pullback — entering here means paying the spread to chase a move that has already run."
+      : flat ? "Price is mid-range with nothing stretched. A fade needs an edge to fade from."
+        : "Neither a clean trend nor a clean range. This is the condition that costs scalpers the most money.";
+    return out;
+  }
+
+  const spread = spreadPips * pip;
+  // you cross the spread on the way in, so the fill is worse than the close
+  const entry = s.side === "bull" ? s.entry + spread : s.entry - spread;
+  const risk = Math.abs(entry - s.stop);
+  const t1 = s.side === "bull" ? entry + risk : entry - risk;
+  const t2 = s.side === "bull" ? Math.max(rangeHi, entry + risk * 1.8) : Math.min(rangeLo, entry - risk * 1.8);
+  const stopPips = risk / pip, t1Pips = Math.abs(t1 - entry) / pip, t2Pips = Math.abs(t2 - entry) / pip;
+  const costR = risk > 0 ? spread / risk : Infinity;
+  const costShare = t1Pips > 0 ? spreadPips / t1Pips : Infinity;
+
+  Object.assign(out, { ...s, entry, risk, t1, t2, stopPips, t1Pips, t2Pips, costR, costShare, rr2: risk > 0 ? Math.abs(t2 - entry) / risk : null });
+
+  const g = out.gates;
+  g.push({ ok: out.session.quality === "Best" || out.session.quality === "Good", hard: out.session.quality === "Closed" || out.session.quality === "Thin",
+    text: `Session: ${out.session.quality.toLowerCase()} — ${out.session.open.map((x) => x.name).join(" + ") || "all closed"} at ${out.session.utc}.` });
+  g.push({ ok: costShare <= 0.2, hard: costShare > 0.33,
+    text: `Spread is ${(costShare * 100).toFixed(0)}% of the ${t1Pips.toFixed(1)}-pip first target (${spreadPips} pips paid, ${costR.toFixed(2)}R). Above a third, the broker takes more of the trade than a normal edge produces.` });
+  g.push({ ok: stopPips >= spreadPips * 4, hard: stopPips < spreadPips * 2,
+    text: `Stop is ${stopPips.toFixed(1)} pips, which is ${(stopPips / spreadPips).toFixed(1)}× the spread. Under about four times, ordinary noise plus the spread closes the trade before the idea is wrong.` });
+  g.push({ ok: stopPips >= 2.5, hard: stopPips < 1.5, text: `Stop distance ${stopPips.toFixed(1)} pips against ATR of ${(atr / pip).toFixed(1)} pips per bar.` });
+  if (event) {
+    const near = event.mins <= 30, soon = event.mins <= 120;
+    g.push({ ok: !soon, hard: near, text: near
+      ? `${event.country} ${event.name} in ${untilText(event.mins)}. Spreads widen and stops slip through a release — this is not a scalping window.`
+      : soon ? `${event.country} ${event.name} in ${untilText(event.mins)}. Positions taken now may still be open across it.`
+        : `Next high-impact release is ${untilText(event.mins)} away.` });
+  } else {
+    g.push({ ok: true, text: "No high-impact release loaded for the next few hours. Load the calendar from the left rail if you have not." });
+  }
+
+  out.blockers = g.filter((x) => x.hard);
+  out.softFails = g.filter((x) => !x.ok && !x.hard);
+  out.tradeable = out.blockers.length === 0;
+  return out;
+}
+
+/** The same rules replayed bar by bar, with the spread charged on every trade. */
+function replayScalps({ candles, tfMin, pip, spreadPips, digits, horizon = 15, warmup = 150 }) {
+  const n = candles.length;
+  const need = warmup + horizon + 10;
+  if (n < need) return { ok: false, reason: `${n} bars loaded. A scalp replay needs at least ${need} — ${warmup} for the averages to settle and ${horizon} for each trade to resolve.` };
+  const step = Math.max(1, Math.round((n - warmup - horizon) / 400));
+  const trades = [];
+  let busy = -1;
+
+  for (let i = warmup; i < n - horizon; i += step) {
+    if (i < busy) continue;
+    const slice = candles.slice(0, i + 1);
+    const a = analyzeSeries(slice, tfMin);
+    if (!a) continue;
+    const sc = buildScalp(a, { spreadPips, pip, at: candles[i].t });
+    if (!sc.tradeable || !sc.side) continue;
+
+    const long = sc.side === "bull";
+    let out = null, exitI = null;
+    for (let j = i + 1; j <= i + horizon && j < n; j++) {
+      const k = candles[j];
+      if (long ? k.l <= sc.stop : k.h >= sc.stop) { out = "loss"; exitI = j; break; }
+      if (long ? k.h >= sc.t1 : k.l <= sc.t1) { out = "win"; exitI = j; break; }
+    }
+    let r;
+    if (out === "win") r = Math.abs(sc.t1 - sc.entry) / sc.risk;
+    else if (out === "loss") r = -1;
+    else { out = "open"; const px = candles[Math.min(i + horizon, n - 1)].c; r = (long ? px - sc.entry : sc.entry - px) / sc.risk; }
+    trades.push({ i, side: sc.side, model: sc.model, out, r, bars: (exitI ?? i + horizon) - i });
+    busy = (exitI ?? i + horizon) + 1;
+  }
+
+  const wins = trades.filter((t) => t.out === "win").length;
+  const losses = trades.filter((t) => t.out === "loss").length;
+  const decided = wins + losses;
+  const sumR = trades.reduce((s, t) => s + t.r, 0);
+  const held = trades.length ? trades.reduce((s, t) => s + t.bars, 0) / trades.length : null;
+  const byModel = (m) => {
+    const f = trades.filter((t) => t.model === m);
+    const w = f.filter((t) => t.out === "win").length, l = f.filter((t) => t.out === "loss").length;
+    return { n: f.length, w, l, hit: w + l ? w / (w + l) : null, r: f.length ? f.reduce((s, t) => s + t.r, 0) / f.length : null };
+  };
+  return {
+    ok: true, trades: trades.length, wins, losses, opens: trades.length - decided, decided,
+    hit: decided ? wins / decided : null, expectancy: trades.length ? sumR / trades.length : null,
+    heldBars: held, heldMins: held != null ? held * tfMin : null,
+    cont: byModel("Continuation"), fade: byModel("Range fade"),
+    spreadPips, horizon, warmup, step, bars: n,
+  };
+}
+
 function riskCalc({ balance, riskPct, entry, stop, target, pairKey, atr }) {
   const inst = INSTRUMENTS[pairKey] || INSTRUMENTS["Custom pair"];
   const risk = balance * (riskPct / 100);
@@ -1248,6 +1415,7 @@ const ICON_PATHS = {
   risk: <path d="M12 3l7 3v6c0 4.4-2.9 7.6-7 9-4.1-1.4-7-4.6-7-9V6z" />,
   learn: <><path d="M4 5.5A2.5 2.5 0 016.5 3H19v15H6.5A2.5 2.5 0 004 20.5z" /><path d="M19 18v3H6.5" /></>,
   journal: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
+  scalp: <path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z" />,
 };
 /** A colour key that matches how the layer actually appears on the chart. */
 function Swatch({ sp }) {
@@ -1680,10 +1848,10 @@ function ChartPanel({ a, digits, layers, scenarioLines }) {
 
 /* ------------------------------------------------- navigation, by workflow -- */
 const NAV_GROUPS = [
-  { stage: "Decide", items: [["desk", "Trade desk", "scenarios"], ["chart", "Chart", "analyzer"]] },
+  { stage: "Decide", items: [["desk", "Trade desk", "scenarios"], ["scalp", "Scalping", "scalp"], ["chart", "Chart", "analyzer"]] },
   { stage: "Detail", items: [["detail", "Breakdown", "learn"], ["risk", "Risk calc", "risk"], ["journal", "Journal", "journal"]] },
 ];
-const PAGE_TITLE = { desk: "Trade desk", chart: "Chart", detail: "Breakdown", risk: "Risk calc", journal: "Journal" };
+const PAGE_TITLE = { desk: "Trade desk", scalp: "Scalping", chart: "Chart", detail: "Breakdown", risk: "Risk calc", journal: "Journal" };
 const LAYER_KEYS = ["ema", "sr", "sd", "liquidity", "fvg", "structure", "scenario"];
 const LAYER_SPEC = [
   {
@@ -1999,6 +2167,7 @@ export default function ForexAnalyzer() {
 
           <div className="grid" style={{ gap: 14, marginTop: 14 }}>
             {a && tab === "desk" && <DeskTab {...{ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, checks, toggleCheck, openWhy, setOpenWhy, setTab, cal, loadCalendar }} />}
+            {a && tab === "scalp" && <ScalpTab {...{ a, digits, pair, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, setTradeTf, cal, setTab, openWhy, setOpenWhy }} />}
             {a && tab === "chart" && <ChartTab {...{ a, digits, layers, setLayers, scenarioLines, ladder, htfTf, tradeTf: tfMismatch ? nativeTf : tradeTf, openWhy, setOpenWhy }} />}
             {a && tab === "detail" && <DetailTab {...{ a, led, scen, bias, status, ladder, htf, digits, pairLabel, tradeTf: tfMismatch ? nativeTf : tradeTf, htfTf, openWhy, setOpenWhy, teach, setTeach, source, quality }} />}
             {a && tab === "risk" && <RiskTab {...{ a, scen, digits, pair, pairLabel, events, setEvents, eventDraft, setEventDraft, cal, loadCalendar }} />}
@@ -2295,6 +2464,182 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair
           })}
         </div>
         {done < 6 && <div className="mt"><Warn level="med">Fewer than six boxes ticked. An unticked box is a specific piece of evidence you do not have yet.</Warn></div>}
+      </Fold>
+    </>
+  );
+}
+
+/* ================================ SCALP TAB ================================ */
+function ScalpTab({ a, digits, pair, pairLabel, tradeTf, setTradeTf, cal, setTab, openWhy, setOpenWhy }) {
+  const inst = INSTRUMENTS[pair] || INSTRUMENTS["Custom pair"];
+  const [spread, setSpread] = useState(pair === "XAU/USD" ? 2.5 : pair === "BTC/USD" ? 8 : 1);
+  const [tick, setTick] = useState(Date.now());
+  const [test, setTest] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [openTest, setOpenTest] = useState(false);
+
+  // the session clock is only useful if it moves
+  useEffect(() => { const id = setInterval(() => setTick(Date.now()), 30000); return () => clearInterval(id); }, []);
+  useEffect(() => { setTest(null); }, [a, spread]);
+
+  const ev = useMemo(() => nextEvent(cal.events), [cal.events]);
+  const sc = useMemo(() => buildScalp(a, { spreadPips: nz(Number(spread), 1), pip: inst.pip, at: tick, event: ev }), [a, spread, inst.pip, tick, ev]);
+  const ses = sc.session;
+
+  const runTest = () => {
+    setRunning(true);
+    setTimeout(() => {
+      try { setTest(replayScalps({ candles: a.candles, tfMin: a.tfMin, pip: inst.pip, spreadPips: nz(Number(spread), 1), digits })); }
+      catch (err) { setTest({ ok: false, reason: `The replay could not finish: ${err.message}` }); }
+      setRunning(false);
+    }, 30);
+  };
+
+  if (!sc.applicable) {
+    return (
+      <Card title="Scalping needs an intraday series" accent={T.warn}>
+        <p style={{ fontSize: 14 }}>
+          The loaded candles are <b>{tradeTf}</b>. A scalp is held for minutes, so a stop placed from {tradeTf} structure is
+          tens of pips wide and stops being a scalp. Nothing here will pretend otherwise by dividing a large candle into small ones —
+          candles merge upward only.
+        </p>
+        <div className="row mt" style={{ gap: 5 }}>
+          <span className="lbl" style={{ margin: 0 }}>Switch to</span>
+          {["1m", "5m", "15m"].map((t) => <button key={t} className="tf" data-on={tradeTf === t ? "1" : "0"} onClick={() => setTradeTf(t)}>{t}</button>)}
+          <span className="note" style={{ fontSize: 12 }}>then press <b>Refresh data</b> to pull that series.</span>
+        </div>
+        <p className="note mt">Not every provider serves 1M history, and free tiers often cap it at a few hundred bars. 5m is usually the shortest that comes back with enough depth to analyse.</p>
+      </Card>
+    );
+  }
+
+  const tone = sc.tradeable ? (sc.side === "bull" ? "bull" : "bear") : "warn";
+
+  return (
+    <>
+      {/* ------------------------------- session --------------------------------- */}
+      <Card title="Session clock" accent={ses.quality === "Best" ? T.bull : ses.quality === "Good" ? T.info : T.warn}
+        right={<Pill tone={ses.quality === "Best" ? "bull" : ses.quality === "Good" ? "info" : "warn"} solid>{ses.quality}</Pill>}>
+        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+          {SESSIONS.map((s) => {
+            const on = ses.open.some((o) => o.key === s.key);
+            return <span key={s.key} className="tag" style={{ color: on ? T.text : T.faint, borderColor: on ? T.line2 : T.line, background: on ? T.panel2 : "transparent" }}>{s.name} {on ? "open" : "closed"}</span>;
+          })}
+          <span className="tag" style={{ marginLeft: "auto" }}>{ses.utc}</span>
+        </div>
+        <p className="note mt">{ses.note}</p>
+        {!ses.overlap && <p className="note" style={{ marginTop: 6 }}>The London–New York overlap opens in {untilText(Math.round(ses.toOverlap))}. Roughly half of a normal day's range prints inside it.</p>}
+      </Card>
+
+      {/* -------------------------------- signal --------------------------------- */}
+      <Card accent={toneColor(tone)}>
+        <div className="spread" style={{ flexWrap: "wrap", gap: 16 }}>
+          <div style={{ flex: "1 1 280px" }}>
+            <div className="eyebrow">Scalp signal · {pairLabel} · {tradeTf}</div>
+            <h1 style={{ fontSize: 34, lineHeight: 1.05, marginTop: 6, color: toneColor(tone) }}>
+              {sc.model === "No setup" ? "NO SETUP" : sc.tradeable ? `${sc.side === "bull" ? "LONG" : "SHORT"} — ${sc.model.toUpperCase()}` : "SETUP BLOCKED"}
+            </h1>
+            <p className="note mt" style={{ fontSize: 13 }}>{sc.model === "No setup" ? sc.reason : sc.why}</p>
+          </div>
+          <div style={{ flex: "0 0 190px" }}>
+            <label><span className="lbl">Your spread (pips)</span>
+              <input type="number" step="0.1" min="0" value={spread} onChange={(e) => setSpread(e.target.value)} />
+            </label>
+            <p className="note" style={{ marginTop: 6, fontSize: 11 }}>Take this from your platform at the time of day you actually trade, not the headline number.</p>
+          </div>
+        </div>
+
+        {sc.model !== "No setup" && (
+          <>
+            <div className="grid g4 mt" style={{ gap: 10 }}>
+              <Stat label="Entry (after spread)" value={sc.entry.toFixed(digits)} tone={tone} sub={`close ${a.price.toFixed(digits)} + ${spread} pip cost`} />
+              <Stat label="Stop" value={sc.stop.toFixed(digits)} tone="warn" sub={`${sc.stopPips.toFixed(1)} pips`} />
+              <Stat label="Target 1" value={sc.t1.toFixed(digits)} sub={`${sc.t1Pips.toFixed(1)} pips · 1:1`} />
+              <Stat label="Target 2" value={sc.t2.toFixed(digits)} sub={`${sc.t2Pips.toFixed(1)} pips · ${sc.rr2 != null ? sc.rr2.toFixed(1) : "—"}:1`} />
+            </div>
+            <div className="hr" />
+            <div className="eyebrow">Gates — every one has to pass</div>
+            <div className="ledger" style={{ marginTop: 6 }}>
+              {sc.gates.map((g, i) => (
+                <div className="led" key={i}>
+                  <span className="dot" style={{ background: g.hard ? T.bear : g.ok ? T.bull : T.warn }} />
+                  <span style={{ color: g.ok ? T.text : T.dim }}>{g.text}</span><span />
+                </div>
+              ))}
+            </div>
+            {!sc.tradeable && (
+              <div className="mt"><Warn level="high">
+                <b>Not tradeable as a scalp.</b> {sc.blockers.length} gate{sc.blockers.length > 1 ? "s" : ""} failed outright. The setup may still be valid on a longer hold where the spread is a smaller share of the move — but as a scalp the arithmetic does not work.
+              </Warn></div>
+            )}
+            {sc.tradeable && sc.softFails.length > 0 && (
+              <div className="mt"><Warn level="med"><b>Passable, not clean.</b> {sc.softFails.length} gate{sc.softFails.length > 1 ? "s are" : " is"} marginal. Marginal scalps are where the spread quietly eats the month.</Warn></div>
+            )}
+            <div className="mt"><Why id="scalpcost" open={openWhy} setOpen={setOpenWhy}>
+              At {spread} pips against a {sc.t1Pips.toFixed(1)}-pip target, the broker takes {(sc.costShare * 100).toFixed(0)}% of a winning trade before you do. That is why the entry above is worse than the close: you buy at the ask and sell at the bid, and a model that ignores it will show an edge that does not survive contact with an account.
+            </Why></div>
+          </>
+        )}
+      </Card>
+
+      {/* ----------------------------- micro levels ------------------------------ */}
+      <div className="grid g2">
+        <Card title="Intraday levels">
+          <table className="tbl">
+            <tbody>
+              <tr><td>40-bar high</td><td className="num">{sc.micro.rangeHi.toFixed(digits)}</td><td className="note">{((sc.micro.rangeHi - a.price) / inst.pip).toFixed(1)} pips above</td></tr>
+              <tr><td>Range mid</td><td className="num">{sc.micro.rangeMid.toFixed(digits)}</td><td className="note">the fade target when there is no trend</td></tr>
+              <tr><td>40-bar low</td><td className="num">{sc.micro.rangeLo.toFixed(digits)}</td><td className="note">{((a.price - sc.micro.rangeLo) / inst.pip).toFixed(1)} pips below</td></tr>
+              <tr><td>20 EMA</td><td className="num">{sc.micro.e20 != null ? sc.micro.e20.toFixed(digits) : "—"}</td><td className="note">the pullback reference for continuation</td></tr>
+              <tr><td>ATR per bar</td><td className="num">{(a.atr / inst.pip).toFixed(1)} pips</td><td className="note">a {tradeTf} bar moves this much on average</td></tr>
+              <tr><td>Range width</td><td className="num">{(sc.micro.rangeSize / inst.pip).toFixed(1)} pips</td><td className="note">{(sc.micro.rangeSize / a.atr).toFixed(1)} ATR — under 2 there is nothing to fade</td></tr>
+            </tbody>
+          </table>
+        </Card>
+        <Card title="What these two setups are">
+          <p style={{ fontSize: 13, marginBottom: 9 }}><b style={{ color: T.text }}>Continuation.</b> The 20 EMA is on the trend side of the 50, price pulled back into the 20 within the last three bars and closed back through it. Stop goes beyond the pullback low, first target at 1:1. It fails when the trend was already exhausted.</p>
+          <p style={{ fontSize: 13 }}><b style={{ color: T.text }}>Range fade.</b> The two EMAs are within 0.3 ATR of each other — no trend — and price sits in the outer fifth of its own 40-bar range with RSI past 68 or under 32. Stop beyond the range edge, target the mid. It fails when the range was actually the start of a breakout.</p>
+          <p className="note mt">Neither is proprietary and neither is a prediction. They are two of the few intraday patterns that can be stated precisely enough for a computer to check honestly — which is the only reason they are here.</p>
+        </Card>
+      </div>
+
+      {/* ------------------------------- measurement ----------------------------- */}
+      <Fold title="How have these scalps actually done — net of your spread?" open={openTest} onToggle={() => setOpenTest((v) => !v)}
+        right={<Pill tone={test && test.ok ? (test.decided >= 30 ? "info" : "warn") : "flat"}>{test && test.ok ? `${test.trades} trades` : "not measured"}</Pill>}>
+        <p className="note">Replays these exact rules bar by bar across the loaded series, charging {spread} pips of spread on every entry and applying the same session gate using each bar's own timestamp. Scalping strategies almost always look profitable until the spread goes in.</p>
+        <div className="row mt" style={{ gap: 8 }}>
+          <button className="btn primary" onClick={runTest} disabled={running}>{running ? "Replaying…" : test ? "Run again" : "Replay with costs"}</button>
+          <span className="note" style={{ fontSize: 11.5 }}>{a.candles.length} bars of {tradeTf}</span>
+        </div>
+        {test && !test.ok && <div className="mt"><Warn level="med">{test.reason}</Warn></div>}
+        {test && test.ok && (
+          <>
+            <div className="grid g4 mt" style={{ gap: 10 }}>
+              <Stat label="Trades taken" value={String(test.trades)} sub={`${test.wins}W / ${test.losses}L / ${test.opens} timed out`} />
+              <Stat label="Hit rate" value={test.hit != null ? `${(test.hit * 100).toFixed(0)}%` : "—"} tone={test.decided < 30 ? "warn" : test.hit >= 0.5 ? "bull" : "bear"} sub={`of ${test.decided} resolved`} />
+              <Stat label="Average result" value={test.expectancy != null ? `${test.expectancy >= 0 ? "+" : ""}${test.expectancy.toFixed(2)}R` : "—"} tone={test.expectancy > 0 ? "bull" : "bear"} sub={`after ${spread} pips of spread`} />
+              <Stat label="Average hold" value={test.heldMins != null ? `${Math.round(test.heldMins)} min` : "—"} sub={`${test.heldBars != null ? test.heldBars.toFixed(1) : "—"} bars`} />
+            </div>
+            <div className="scroll mt">
+              <table className="tbl">
+                <thead><tr><th>Setup</th><th>Trades</th><th>Won</th><th>Lost</th><th>Hit rate</th><th>Avg R</th></tr></thead>
+                <tbody>
+                  {[["Continuation", test.cont], ["Range fade", test.fade]].map(([l, d]) => (
+                    <tr key={l}>
+                      <td>{l}</td><td className="num">{d.n}</td><td className="num">{d.w}</td><td className="num">{d.l}</td>
+                      <td className="num">{d.hit != null ? `${(d.hit * 100).toFixed(0)}%` : "—"}</td>
+                      <td className="num" style={{ color: d.r > 0 ? T.bull : d.r < 0 ? T.bear : T.dim }}>{d.r != null ? `${d.r >= 0 ? "+" : ""}${d.r.toFixed(2)}` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {test.decided < 30 && <div className="mt"><Warn level="high"><b>{test.decided} resolved trades proves nothing.</b> Scalping needs hundreds of trades before a hit rate means anything, because the edge per trade is small enough to hide inside ordinary variance.</Warn></div>}
+            <div className="mt"><Warn level="med">
+              <b>Still optimistic.</b> Spread is charged but commission, swap and slippage are not, and slippage is worst exactly where scalps are taken — fast markets and session opens. Stops are assumed to fill at the price, which is the assumption that breaks first. And this is the same data the rules were written against.
+            </Warn></div>
+          </>
+        )}
       </Fold>
     </>
   );
