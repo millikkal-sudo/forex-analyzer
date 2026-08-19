@@ -900,11 +900,19 @@ function buildVerdict(a, led, scen, digits) {
   else if (Math.max(led.bull, led.bear) >= lean && Math.abs(gap) >= 1) { action = gap > 0 ? "WAIT — LEANING BUY" : "WAIT — LEANING SELL"; tone = "warn"; side = gap > 0 ? "bull" : "bear"; }
   else { action = "NO SETUP"; tone = "flat"; side = null; }
 
+  /* A trigger is only a trigger if price has not already passed it. The old
+     fallback took the last swing high whether or not price was above it, and
+     then labelled a condition already satisfied as "not yet met". */
+  const above = (v) => v != null && v > a.price;
+  const below = (v) => v != null && v < a.price;
+  const bullLevel = [res ? res.hi : null, lastLH ? lastLH.price : null].find(above);
+  const bearLevel = [sup ? sup.lo : null, lastHL ? lastHL.price : null].find(below);
   const trigger = side === "bull"
-    ? (res ? `close above ${res.hi.toFixed(digits)}` : lastLH ? `close above ${lastLH.price.toFixed(digits)}` : "a close above the last swing high")
+    ? (bullLevel != null ? `close above ${bullLevel.toFixed(digits)}` : "no level above price — nothing left to break, so there is no entry trigger here")
     : side === "bear"
-      ? (sup ? `close below ${sup.lo.toFixed(digits)}` : lastHL ? `close below ${lastHL.price.toFixed(digits)}` : "a close below the last swing low")
+      ? (bearLevel != null ? `close below ${bearLevel.toFixed(digits)}` : "no level below price — nothing left to break, so there is no entry trigger here")
       : "no level worth watching yet";
+  const triggerMet = side ? (side === "bull" ? bullLevel == null : bearLevel == null) : false;
   const invalidation = side === "bull"
     ? (lastHL ? lastHL.price.toFixed(digits) : (a.price - a.atr * 1.5).toFixed(digits))
     : side === "bear"
@@ -929,7 +937,7 @@ function buildVerdict(a, led, scen, digits) {
   if (side && missing.length) blockers.push(`Not yet supporting it: ${missing.join(", ")}.`);
   scen.noTrade.checks.slice(0, 2).forEach((c) => blockers.push(c.text));
 
-  return { action, tone, side, trigger, invalidation, reason, blockers, score: side === "bull" ? led.bull : side === "bear" ? led.bear : 0,
+  return { action, tone, side, trigger, triggerMet, invalidation, reason, blockers, score: side === "bull" ? led.bull : side === "bear" ? led.bear : 0,
     against: side === "bull" ? led.bear : side === "bear" ? led.bull : 0, ev, evText, fvgText };
 }
 
@@ -974,14 +982,12 @@ function replaySignals({ candles, tfMin, htfMin, digits, horizon = 40, warmup = 
     const v = buildVerdict(a, led, scen, digits);
     if (!v.side) continue;
 
+    // buildSetup now enforces coherence and the 1:1 floor, so the replay
+    // measures exactly the plans the Trade desk would have shown you
     const setup = buildSetup(a, led, scen, v.side);
-    if (!setup || setup.t1v == null) continue;
-    const { entry, stop, t1v } = setup;
-    const risk = Math.abs(entry - stop);
+    if (!setup || !setup.ok) continue;
+    const { entry, stop, t1v, risk } = setup;
     const long = v.side === "bull";
-    if (!(risk > 0)) continue;
-    // the plan must be coherent before it is worth measuring
-    if (long ? !(t1v > entry && stop < entry) : !(t1v < entry && stop > entry)) continue;
 
     let fillI = null, out = null, exitI = null;
     for (let j = i + 1; j <= i + horizon && j < n; j++) {
@@ -1945,6 +1951,10 @@ const NAV_GROUPS = [
   { stage: "Decide", items: [["desk", "Trade desk", "scenarios"], ["scalp", "Scalping", "scalp"], ["chart", "Chart", "analyzer"]] },
   { stage: "Detail", items: [["detail", "Breakdown", "learn"], ["risk", "Risk calc", "risk"], ["journal", "Journal", "journal"]] },
 ];
+/* Bump this whenever behaviour changes. It is rendered in the rail footer so a
+   screenshot always says which build produced it. */
+const BUILD = "2026-08-19 · plan-integrity";
+
 const PAGE_TITLE = { desk: "Trade desk", scalp: "Scalping", chart: "Chart", detail: "Breakdown", risk: "Risk calc", journal: "Journal" };
 const LAYER_KEYS = ["ema", "sr", "sd", "liquidity", "fvg", "structure", "scenario"];
 const LAYER_SPEC = [
@@ -2260,6 +2270,10 @@ export default function ForexAnalyzer() {
         </div>
 
         <div className="railfoot">
+          <div className="spread" style={{ marginBottom: 6 }}>
+            <span className="lbl" style={{ margin: 0 }}>Build</span>
+            <span className="mono" style={{ fontSize: 10, color: T.faint }}>{BUILD}</span>
+          </div>
           <div className="spread"><span className="lbl" style={{ margin: 0 }}>Loaded</span><span className="mono" style={{ fontSize: 11.5 }}>{series.length} bars</span></div>
           {live.fetchedAt && <div className="spread" style={{ marginTop: 4 }}><span className="lbl" style={{ margin: 0 }}>Fetched</span><span className="mono" style={{ fontSize: 11.5, color: isStale ? T.warn : T.dim }}>{new Date(live.fetchedAt).toLocaleTimeString()}</span></div>}
           {quality && (
@@ -2358,18 +2372,49 @@ export default function ForexAnalyzer() {
 /* =============================== PAGE TABS ================================= */
 /* ---------------------------------------------------------- shared helpers -- */
 /** Entry / stop / targets for one direction, built only from mapped references. */
+/**
+ * Entry, stop and targets for one direction — or null with the reason it cannot
+ * be built. Every check here exists because its absence produced a nonsense
+ * card: a long whose target sat below its entry, and a 0.30:1 "plan" that
+ * Math.abs() had disguised as positive. Reward is now signed, targets on the
+ * wrong side of entry are discarded rather than reported, and a setup that
+ * cannot clear 1:1 is refused instead of presented.
+ */
+const MIN_RR = 1;
+
 function buildSetup(a, led, scen, dir) {
   const s = dir === "bull" ? scen.bullish : scen.bearish;
-  const entryZone = dir === "bull" ? a.sr.sup[0] : a.sr.res[0];
-  const pivot = [...a.pivots].reverse().find((x) => (dir === "bull" ? x.type === "L" : x.type === "H"));
-  if (!entryZone || !pivot) return null;
+  const long = dir === "bull";
+  const entryZone = long ? a.sr.sup[0] : a.sr.res[0];
+  const pivot = [...a.pivots].reverse().find((x) => (long ? x.type === "L" : x.type === "H"));
+  if (!entryZone) return { ok: false, reason: `No mapped ${long ? "support" : "resistance"} zone to enter against. Entering in open space means the stop has nothing structural to sit behind.` };
+  if (!pivot) return { ok: false, reason: `No confirmed swing ${long ? "low" : "high"} to place a stop beyond.` };
+
   const entry = entryZone.mid;
-  const stop = dir === "bull" ? Math.min(pivot.price, entryZone.lo) - a.atr * 0.3 : Math.max(pivot.price, entryZone.hi) + a.atr * 0.3;
-  const t1v = s.targets[0] ? parseFloat(String(s.targets[0].v).split("–")[0]) : null;
-  const t2v = s.targets[1] ? parseFloat(String(s.targets[1].v).split("–")[0]) : null;
-  const rr1 = t1v != null ? Math.abs(t1v - entry) / Math.abs(entry - stop) : null;
-  const rr2 = t2v != null ? Math.abs(t2v - entry) / Math.abs(entry - stop) : null;
-  return { dir, entry, stop, t1v, t2v, rr1, rr2, entryZone, pivot };
+  const stop = long ? Math.min(pivot.price, entryZone.lo) - a.atr * 0.3 : Math.max(pivot.price, entryZone.hi) + a.atr * 0.3;
+  const risk = Math.abs(entry - stop);
+  if (!(risk > 0)) return { ok: false, reason: "The stop and the entry resolve to the same price, so there is no measurable risk to size against." };
+  if (long ? stop >= entry : stop <= entry) return { ok: false, reason: `The structural stop sits on the wrong side of the entry zone, which means the level and the swing disagree about direction.` };
+
+  // signed reward: a target behind the entry is not a target
+  const parse = (t) => (t ? parseFloat(String(t.v).split("–")[0]) : null);
+  const ahead = (v) => v != null && Number.isFinite(v) && (long ? v > entry : v < entry);
+  const usable = s.targets.map(parse).filter(ahead).sort((x, y) => (long ? x - y : y - x));
+  const rejected = s.targets.map(parse).filter((v) => v != null && !ahead(v));
+
+  if (!usable.length) {
+    return { ok: false, entry, stop, entryZone, pivot, rejected,
+      reason: rejected.length
+        ? `Every mapped target is on the wrong side of the ${long ? "entry" : "entry"} at ${entry.toFixed(a.digits || 5)} — the nearest area the analysis found is ${rejected[0].toFixed(a.digits || 5)}, which a ${long ? "long" : "short"} from here would not reach by being right. There is nothing to aim at.`
+        : `No area is mapped ${long ? "above" : "below"} the entry, so there is no measurable target. Trading toward unmapped space gives you no basis for taking profit.` };
+  }
+
+  const t1v = usable[0], t2v = usable[1] ?? null;
+  const rr1 = Math.abs(t1v - entry) / risk;
+  const rr2 = t2v != null ? Math.abs(t2v - entry) / risk : null;
+  const thin = rr1 < MIN_RR;
+  return { ok: !thin, thin, dir, entry, stop, risk, t1v, t2v, rr1, rr2, entryZone, pivot, rejected,
+    reason: thin ? `The stop is ${risk.toFixed(a.digits || 5)} away and the first target only ${Math.abs(t1v - entry).toFixed(a.digits || 5)} — ${rr1.toFixed(2)}:1. Risking a large amount to make a small one needs a hit rate this tool has no evidence for, so it is not presented as a plan.` : null };
 }
 
 function ScenarioBody({ s, digits }) {
@@ -2426,7 +2471,7 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair
 
   const dir = scTab === "none" ? favoured : scTab;
   const setup = useMemo(() => buildSetup(a, led, scen, dir), [a, led, scen, dir]);
-  const money = setup && setup.t1v != null
+  const money = setup && setup.ok
     ? riskCalc({ balance: nz(Number(f.balance)), riskPct: nz(Number(f.riskPct)), entry: setup.entry, stop: setup.stop, target: setup.t1v, pairKey: pair, atr: a.atr })
     : null;
 
@@ -2474,7 +2519,7 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair
         {verdict && (
           <>
             <div className="grid g3 mt" style={{ gap: 10 }}>
-              <Stat label="Trigger — not yet met" value={verdict.trigger} tone={verdict.tone} />
+              <Stat label={verdict.triggerMet ? "Trigger" : "Trigger — not yet met"} value={verdict.trigger} tone={verdict.tone} sub={verdict.triggerMet ? "price has already passed every mapped level on this side" : undefined} />
               <Stat label="Invalidation" value={verdict.invalidation || "—"} tone="warn" sub={verdict.side ? `a close past this ends the ${verdict.side === "bull" ? "bullish" : "bearish"} case` : "nothing to invalidate"} />
               <Stat label="Volatility" value={`${a.atr.toFixed(digits)} ATR`} sub={`${a.volatility.toLowerCase()} — size the stop against this`} />
             </div>
@@ -2526,14 +2571,24 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair
       {/* ------------------------------ the numbers ------------------------------ */}
       <Card title={`Plan — ${dir === "bull" ? "buy" : "sell"} side`} accent={dir === "bull" ? T.bull : T.bear}
         right={<span className="tag">from mapped levels only</span>}>
-        {!setup ? (
-          <p className="note">No plan can be built this way: the data does not give both an entry reference (a mapped zone in this direction) and a structural stop location. Rather than invent numbers, the tool stops here.</p>
+        {!setup || !setup.ok ? (
+          <>
+            <Warn level="med"><b>No plan is offered here.</b> {setup ? setup.reason : "The data does not give both an entry reference and a structural stop location."}</Warn>
+            {setup && setup.entry != null && (
+              <div className="grid g3 mt" style={{ gap: 10 }}>
+                <Stat label="Entry reference" value={setup.entry.toFixed(digits)} sub={setup.entryZone ? `${setup.entryZone.name} · ${setup.entryZone.touches} reaction${setup.entryZone.touches === 1 ? "" : "s"}` : ""} />
+                <Stat label="Structural stop" value={setup.stop.toFixed(digits)} tone="warn" sub={`past the swing at ${setup.pivot.price.toFixed(digits)}`} />
+                <Stat label="Reward available" value={setup.rr1 != null ? `${setup.rr1.toFixed(2)}:1` : "none mapped"} tone="bear" sub={`below the ${MIN_RR}:1 minimum`} />
+              </div>
+            )}
+            <p className="note mt">Refusing here is the point. The numbers above are real; the arrangement of them is not a trade, and dressing it up as one is how a tool teaches bad habits.</p>
+          </>
         ) : (
           <>
             <div className="grid g4" style={{ gap: 10 }}>
-              <Stat label="Entry zone" value={`${setup.entryZone.lo.toFixed(digits)} – ${setup.entryZone.hi.toFixed(digits)}`} tone={dir === "bull" ? "bull" : "bear"} sub={`${setup.entryZone.name} · ${setup.entryZone.touches} reactions`} />
+              <Stat label="Entry zone" value={`${setup.entryZone.lo.toFixed(digits)} – ${setup.entryZone.hi.toFixed(digits)}`} tone={dir === "bull" ? "bull" : "bear"} sub={`${setup.entryZone.name} · ${setup.entryZone.touches} reaction${setup.entryZone.touches === 1 ? "" : "s"}${setup.entryZone.touches < 2 ? " — a single touch is a price, not a zone" : ""}`} />
               <Stat label="Stop-loss" value={setup.stop.toFixed(digits)} tone="warn" sub={`past the ${dir === "bull" ? "higher low" : "lower high"} at ${setup.pivot.price.toFixed(digits)}`} />
-              <Stat label="Target 1" value={setup.t1v != null ? setup.t1v.toFixed(digits) : "none mapped"} sub={setup.rr1 != null ? `${setup.rr1.toFixed(2)}:1 reward-to-risk` : "no mapped area"} />
+              <Stat label="Target 1" value={setup.t1v.toFixed(digits)} sub={`${setup.rr1.toFixed(2)}:1 reward-to-risk`} />
               <Stat label="Target 2" value={setup.t2v != null ? setup.t2v.toFixed(digits) : "none mapped"} sub={setup.rr2 != null ? `${setup.rr2.toFixed(2)}:1` : ""} />
             </div>
             <div className="hr" />
