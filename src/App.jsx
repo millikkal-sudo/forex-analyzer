@@ -265,6 +265,25 @@ const PAIRS = Object.keys(INSTRUMENTS);
 const TFS = ["1m", "5m", "15m", "30m", "1H", "4H", "Daily", "Weekly"];
 const TF_MIN = { "1m": 1, "5m": 5, "15m": 15, "30m": 30, "1H": 60, "4H": 240, Daily: 1440, Weekly: 10080 };
 
+/* How deep a fetch has to be before every part of the analysis can run. These
+   are not preferences: an EMA200 needs 200 closes to exist, and a Daily
+   context row has to be built by merging the loaded candles, which takes 30
+   daily bars — 720 hourly ones. Fetch less and components go unmeasured. */
+function barPlan(tradeTf, htfTf) {
+  const tfMin = TF_MIN[tradeTf], htfMin = TF_MIN[htfTf];
+  const ratio = htfMin / tfMin;
+  const buildable = ratio >= 1 && Number.isInteger(ratio);
+  const items = [
+    { need: 260, what: `the 200 EMA to exist and settle`, key: "ema" },
+    { need: buildable ? Math.ceil(30 * ratio) : Infinity, what: `a ${htfTf} context row (30 ${htfTf} bars merged from ${tradeTf})`, key: "htf" },
+    { need: buildable ? Math.ceil(60 * ratio) : Infinity, what: `a ${htfTf} row with its own moving averages, not just structure`, key: "htfFull" },
+    { need: 310, what: "the signal replay to have warm-up plus room to resolve", key: "replay" },
+  ];
+  const min = 260;
+  const good = Math.min(5000, Math.max(...items.filter((i) => Number.isFinite(i.need)).map((i) => i.need)));
+  return { items, min, good, ratio, buildable, htfTf, tradeTf };
+}
+
 /* ============================== INDICATOR MATH ============================= */
 const last = (a) => (a && a.length ? a[a.length - 1] : undefined);
 const nz = (v, d = 0) => (Number.isFinite(v) ? v : d);
@@ -586,6 +605,18 @@ function resample(candles, ratio) {
 }
 
 /* ============================ ANALYSIS ORCHESTRATOR ======================== */
+/* How far back the level map looks, in bars.
+
+   Indicators need all the history they can get — a 200 EMA is meaningless
+   without 200 bars behind it. Level maps are the opposite: clustering every
+   swing in the series means the zones, and their reaction counts, change every
+   time you fetch a different number of bars. A zone from four months ago is not
+   support today, and it should not silently alter the reading either.
+
+   So: indicators run on everything loaded, the level map runs on a fixed
+   window. Fetch 800 bars or 3000 and the zones come out the same.            */
+const LEVEL_WINDOW = 300;
+
 function analyzeSeries(c, tfMin) {
   if (!c || c.length < 30) return null;
   const closes = c.map((k) => k.c);
@@ -598,9 +629,19 @@ function analyzeSeries(c, tfMin) {
   const pivots = findPivots(c, 2);
   const structure = classifyStructure(pivots);
   const events = findStructureEvents(c, pivots);
-  const sr = buildSR(c, pivots, atr);
-  const sd = findSDZones(c, atr);
-  const liq = findLiquidity(c, pivots, atr, tfMin);
+  // level map: fixed lookback, with indices mapped back to the full series so
+  // everything the chart draws still lines up with the right candle
+  const off = Math.max(0, c.length - LEVEL_WINDOW);
+  const win = off ? c.slice(off) : c;
+  const winPivots = off ? pivots.filter((p) => p.i >= off).map((p) => ({ ...p, i: p.i - off })) : pivots;
+  const shift = (arr) => (off ? arr.map((z) => ({ ...z, i: z.i + off })) : arr);
+
+  const sr = buildSR(win, winPivots, atr);
+  const sd = shift(findSDZones(win, atr));
+  const liqRaw = findLiquidity(win, winPivots, atr, tfMin);
+  const liq = off
+    ? { ...liqRaw, levels: shift(liqRaw.levels), sweep: liqRaw.sweep ? { ...liqRaw.sweep, level: { ...liqRaw.sweep.level, i: liqRaw.sweep.level.i + off } } : liqRaw.sweep }
+    : liqRaw;
   const fvg = findFVGs(c, atr);
   const patterns = findPatterns(c, atr);
 
@@ -641,10 +682,31 @@ function analyzeSeries(c, tfMin) {
   const strength = drift > 2.2 && maRead !== "Neutral" && structRead !== "Neutral" ? "Strong" : drift > 1 && maRead !== "Neutral" ? "Moderate" : "Weak";
 
   return { candles: c, price, ema, rsi, macd, atrArr, atr, atrPct, volatility, pivots, structure, structRead, events,
+    levelWindow: Math.min(c.length, LEVEL_WINDOW), windowed: c.length > LEVEL_WINDOW,
     sr, sd, liq, fvg, patterns, maRead, maWhy, rsiVal, rsiPrev, rsiRead, rsiState, macdRead, macdWhy, momentumRead, srRead, srWhy, strength, tfMin };
 }
 
 /* =============================== MTF LADDER ================================ */
+/**
+ * The binding constraints on bar count, stated rather than guessed at:
+ *   a 200 EMA needs 200 bars plus burn-in before its value settles;
+ *   the higher-timeframe row is built by merging these candles, so it needs
+ *     enough of them to make 60 higher-timeframe bars;
+ *   the signal replay needs 260 bars of warm-up plus 40 to resolve a trade.
+ */
+function recommendBars(tf, htf) {
+  const ratio = Math.max(1, Math.round(TF_MIN[htf] / TF_MIN[tf]));
+  const whole = TF_MIN[htf] % TF_MIN[tf] === 0 && TF_MIN[htf] >= TF_MIN[tf];
+  const needs = [
+    { need: 300, why: "EMA200 to have a settled value (200 bars plus burn-in)" },
+    { need: 310, why: "the signal replay to run at all (260 warm-up + 40 to resolve)" },
+    ...(whole ? [{ need: 60 * ratio, why: `60 ${htf} bars for the higher-timeframe row (${ratio} × ${tf} each)` }] : []),
+  ];
+  const good = Math.min(5000, Math.ceil(Math.max(...needs.map((x) => x.need)) / 100) * 100);
+  const min = Math.min(5000, Math.max(300, whole ? 30 * ratio : 300));
+  return { min, good, ratio, whole, needs, capped: good >= 5000 };
+}
+
 function buildLadder(baseCandles, baseTf) {
   const baseMin = TF_MIN[baseTf];
   const ladder = [];
@@ -699,9 +761,22 @@ function buildLedger(a, htf, digits = 5) {
       bull: sw && sw.dir === "down" ? 1 : 0, bear: sw && sw.dir === "up" ? 1 : 0,
       why: sw ? `A recent bar traded ${sw.dir === "down" ? "below" : "above"} ${sw.level.kind.toLowerCase()} and closed back ${sw.dir === "down" ? "above" : "below"} it — resting orders were reached and price did not hold there. This is a sweep, not proof of reversal.` : "No sweep of a mapped liquidity level in the last 12 bars." },
   ];
+  /* A component with no data is not evidence against — it is a missing
+     measurement. Scoring it out of eight anyway makes a shallow fetch look
+     like a weak market, which is how the same chart produced BUY on 1000 bars
+     and WAIT on 500. The denominator shrinks to what was actually measurable. */
+  rows.forEach((r) => { if (r.measured === undefined) r.measured = true; });
+  const htfRow = rows.find((r) => r.key === "Higher timeframe");
+  htfRow.measured = !!(htf && htf.available);
+  if (!a.ema200Ready) {
+    const ma = rows.find((r) => r.key === "EMA alignment");
+    ma.why += ` The 200 EMA has too little history to be included (it needs about 260 bars), so alignment is judged on the 20 and 50 only.`;
+  }
   const bull = rows.reduce((s, r) => s + r.bull, 0);
   const bear = rows.reduce((s, r) => s + r.bear, 0);
-  return { rows, bull, bear, max: 8 };
+  const reachable = rows.reduce((s, r) => s + (r.measured ? r.max : 0), 0);
+  const unmeasured = rows.filter((r) => !r.measured);
+  return { rows, bull, bear, max: 8, reachable, unmeasured };
 }
 
 function overallBias(led, a) {
@@ -812,10 +887,17 @@ function buildVerdict(a, led, scen, digits) {
   const bullFVG = a.fvg.zones.find((z) => z.kind === "bullish" && z.inside);
   const bearFVG = a.fvg.zones.find((z) => z.kind === "bearish" && z.inside);
 
+  /* Thresholds are proportions of the measurable evidence, not raw counts.
+     Five of eight and four of six are the same strength of case; the old fixed
+     cut-off silently downgraded every read taken on a shallow fetch. */
+  const reach = led.reachable || 8;
+  const strong = Math.ceil((5 / 8) * reach);
+  const lean = Math.ceil((4 / 8) * reach);
+
   let action, tone, side;
-  if (led.bull >= 5 && gap >= 2) { action = "POTENTIAL BUY"; tone = "bull"; side = "bull"; }
-  else if (led.bear >= 5 && gap <= -2) { action = "POTENTIAL SELL"; tone = "bear"; side = "bear"; }
-  else if (Math.max(led.bull, led.bear) >= 4 && Math.abs(gap) >= 1) { action = gap > 0 ? "WAIT — LEANING BUY" : "WAIT — LEANING SELL"; tone = "warn"; side = gap > 0 ? "bull" : "bear"; }
+  if (led.bull >= strong && gap >= 2) { action = "POTENTIAL BUY"; tone = "bull"; side = "bull"; }
+  else if (led.bear >= strong && gap <= -2) { action = "POTENTIAL SELL"; tone = "bear"; side = "bear"; }
+  else if (Math.max(led.bull, led.bear) >= lean && Math.abs(gap) >= 1) { action = gap > 0 ? "WAIT — LEANING BUY" : "WAIT — LEANING SELL"; tone = "warn"; side = gap > 0 ? "bull" : "bear"; }
   else { action = "NO SETUP"; tone = "flat"; side = null; }
 
   const trigger = side === "bull"
@@ -1963,6 +2045,7 @@ export default function ForexAnalyzer() {
   }, [rawAll, closedOnly, source, live.tf, tradeTf, clock]);
   const nativeTf = source === "live" ? (live.tf || tradeTf) : tradeTf;
 
+  const plan = useMemo(() => barPlan(tradeTf, htfTf), [tradeTf, htfTf]);
   const ratio = TF_MIN[tradeTf] / TF_MIN[nativeTf];
   const tfMismatch = ratio < 1 || !Number.isInteger(ratio);
   const series = useMemo(() => (tfMismatch ? raw : resample(raw, ratio)), [raw, ratio, tfMismatch]);
@@ -2102,6 +2185,10 @@ export default function ForexAnalyzer() {
               {live.status === "loading" ? "Fetching…" : source === "live" ? "Refresh" : "Fetch"}
             </button>
           </div>
+          <button className="why" style={{ marginTop: 6 }} onClick={() => setLive((s) => ({ ...s, bars: plan.good }))}
+            title={`${plan.good} bars covers every component for ${tradeTf} with a ${htfTf} context`}>
+            {Number(live.bars) >= plan.good ? `✓ ${plan.good} IS ENOUGH FOR ${tradeTf}+${htfTf}` : `USE ${plan.good} FOR ${tradeTf}+${htfTf} →`}
+          </button>
           {source === "live" && (
             <div style={{ marginTop: 10, padding: "9px 10px", border: `1px solid ${T.line}`, borderRadius: 7 }}>
               <div className="spread">
@@ -2213,7 +2300,7 @@ export default function ForexAnalyzer() {
             <div className="sigbar">
               <div className="sigin">
                 <span className="sigact" style={{ background: toneColor(verdict.tone), color: T.ink }}>{verdict.action}</span>
-                <span className="sigfld"><span>Confluence</span><b style={{ color: toneColor(verdict.tone) }}>{verdict.score} vs {verdict.against} of 8</b></span>
+                <span className="sigfld"><span>Confluence</span><b style={{ color: toneColor(verdict.tone) }}>{verdict.score} vs {verdict.against} of {led.reachable}</b></span>
                 <span className="sigfld"><span>Trigger</span><b>{verdict.trigger}</b></span>
                 {verdict.invalidation && <span className="sigfld"><span>Invalidation</span><b style={{ color: T.warn }}>{verdict.invalidation}</b></span>}
                 <button className="why" style={{ marginLeft: "auto" }} onClick={() => { setTab("desk"); setOpenWhy(openWhy === "verdict" ? null : "verdict"); }}>WHY?</button>
@@ -2237,6 +2324,14 @@ export default function ForexAnalyzer() {
           )}
           {tfMismatch && (
             <div className="mt"><Warn level="high">The loaded series is {nativeTf}. A {tradeTf} view cannot be built from it, because you can only combine candles upward, never split them. Analysis is running on {nativeTf} instead.</Warn></div>
+          )}
+          {led && led.unmeasured.length > 0 && (
+            <div className="mt"><Warn level="med">
+              <b>{led.unmeasured.map((r) => r.key).join(" and ")} could not be measured from {series.length} bars,</b> so the score is out of {led.reachable} rather than 8.
+              {plan.buildable
+                ? ` Fetching ${plan.good} bars of ${tfMismatch ? nativeTf : tradeTf} would build the ${htfTf} row — that is ${plan.ratio} ${tfMismatch ? nativeTf : tradeTf} candles per ${htfTf} candle, and 30 ${htfTf} candles is the minimum to read structure from.`
+                : ` A ${htfTf} series cannot be built from ${tfMismatch ? nativeTf : tradeTf} candles at all — pick a higher timeframe that is a whole multiple of it.`}
+            </Warn></div>
           )}
           {!a && (
             <div className="mt"><Warn level="high">Not enough candles to analyse. At least 30 are needed before any level, pivot or reading can be computed.</Warn></div>
@@ -2363,11 +2458,11 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair
             </div>
           </div>
           <div style={{ minWidth: 230, flex: "1 1 240px" }}>
-            <div className="spread"><span className="lbl" style={{ margin: 0 }}>Bullish evidence</span><span className="mono" style={{ color: T.bull, fontWeight: 600 }}>{led.bull}/8</span></div>
-            <Bar value={led.bull} max={8} color={T.bull} />
-            <div className="spread" style={{ marginTop: 9 }}><span className="lbl" style={{ margin: 0 }}>Bearish evidence</span><span className="mono" style={{ color: T.bear, fontWeight: 600 }}>{led.bear}/8</span></div>
-            <Bar value={led.bear} max={8} color={T.bear} />
-            <button className="why" style={{ marginTop: 9 }} onClick={() => setTab("detail")}>SEE THE 8 POINTS →</button>
+            <div className="spread"><span className="lbl" style={{ margin: 0 }}>Bullish evidence</span><span className="mono" style={{ color: T.bull, fontWeight: 600 }}>{led.bull}/{led.reachable}</span></div>
+            <Bar value={led.bull} max={led.reachable} color={T.bull} />
+            <div className="spread" style={{ marginTop: 9 }}><span className="lbl" style={{ margin: 0 }}>Bearish evidence</span><span className="mono" style={{ color: T.bear, fontWeight: 600 }}>{led.bear}/{led.reachable}</span></div>
+            <Bar value={led.bear} max={led.reachable} color={T.bear} />
+            <button className="why" style={{ marginTop: 9 }} onClick={() => setTab("detail")}>SEE THE {led.reachable} POINTS →</button>
             {cal.status === "idle" && (
               <button className="why" style={{ marginTop: 9, marginLeft: 6 }} onClick={() => loadCalendar(7)}>CHECK CALENDAR →</button>
             )}
@@ -2398,13 +2493,13 @@ function DeskTab({ a, led, bias, status, scen, verdict, digits, htf, htfTf, pair
 
       {/* ------------------------------ scenarios -------------------------------- */}
       <Card title="Scenarios" right={
-        <span className="tag">{scTab === "none" ? (scen.noTrade.active ? "conditions met" : "not indicated") : `${scTab === "bull" ? led.bull : led.bear}/8 evidence`}</span>
+        <span className="tag">{scTab === "none" ? (scen.noTrade.active ? "conditions met" : "not indicated") : `${scTab === "bull" ? led.bull : led.bear}/${led.reachable} evidence`}</span>
       }>
         <div className="seg">
           {SC.map(([k, l, col]) => (
             <button key={k} data-on={scTab === k ? "1" : "0"} onClick={() => setScTab(k)}
               style={scTab === k ? { background: col, color: T.ink } : undefined}>
-              {l}{k !== "none" ? ` ${k === "bull" ? led.bull : led.bear}/8` : scen.noTrade.active ? " ●" : ""}
+              {l}{k !== "none" ? ` ${k === "bull" ? led.bull : led.bear}/${led.reachable}` : scen.noTrade.active ? " ●" : ""}
             </button>
           ))}
         </div>
@@ -2848,15 +2943,15 @@ function DetailTab({ a, led, scen, bias, status, ladder, htf, digits, pairLabel,
             <tbody>
               {led.rows.map((r) => (
                 <tr key={r.key}>
-                  <td>{r.key}<div className="note" style={{ fontSize: 11 }}>max {r.max}</div></td>
+                  <td>{r.key}<div className="note" style={{ fontSize: 11 }}>{r.measured ? `max ${r.max}` : "not measurable"}</div></td>
                   <td className="num" style={{ color: r.bull ? T.bull : T.faint, fontWeight: r.bull ? 700 : 400 }}>+{r.bull}</td>
                   <td className="num" style={{ color: r.bear ? T.bear : T.faint, fontWeight: r.bear ? 700 : 400 }}>+{r.bear}</td>
                   <td className="note">{r.why}</td>
                 </tr>
               ))}
               <tr><td><b>Total</b></td>
-                <td className="num" style={{ color: T.bull, fontWeight: 700 }}>{led.bull}/8</td>
-                <td className="num" style={{ color: T.bear, fontWeight: 700 }}>{led.bear}/8</td>
+                <td className="num" style={{ color: T.bull, fontWeight: 700 }}>{led.bull}/{led.reachable}</td>
+                <td className="num" style={{ color: T.bear, fontWeight: 700 }}>{led.bear}/{led.reachable}</td>
                 <td className="note">Technical Confluence Score. A tally of agreeing evidence — not a probability, and not validated against historical outcomes.</td></tr>
             </tbody>
           </table>
@@ -3261,8 +3356,8 @@ function buildLesson({ a, led, scen, bias, status, ladder, htf, digits, pairLabe
     ["Where the important levels are", `${sup ? `The nearest support zone is ${sup.lo.toFixed(digits)}–${sup.hi.toFixed(digits)}, built from ${sup.touches} swing point${sup.touches === 1 ? "" : "s"} clustered together.` : "No support zone could be mapped — there are not enough clustered swing lows."} ${res ? `The nearest resistance zone is ${res.lo.toFixed(digits)}–${res.hi.toFixed(digits)}, from ${res.touches} swing point${res.touches === 1 ? "" : "s"}.` : "No resistance zone could be mapped."} Note that these are ranges, not lines. A level is an area where behaviour changed before, and behaviour is imprecise.`],
     ["Where liquidity might sit", a.liq.levels.length ? `The closest reference points are ${a.liq.levels.slice(0, 3).map((l) => `${l.kind.toLowerCase()} at ${l.price.toFixed(digits)}`).join(", ")}. "Liquidity" here means nothing mystical: obvious price points attract orders — stops placed just beyond a visible swing, entries at a round level. That is why price sometimes runs slightly past an obvious point and turns. It is also why it sometimes runs past and keeps going.` : "No equal highs, equal lows or prior-period extremes were identifiable in this data, so there is nothing to say about where orders might be resting."],
     ["What the indicators add", `EMAs: ${a.maWhy} RSI(14) is ${a.rsiVal != null ? a.rsiVal.toFixed(1) : "unavailable"} — ${a.rsiState.toLowerCase()}. RSI measures the pace of recent gains against recent losses; it is not a reversal signal, and in a real trend it can stay pinned above 70 for weeks. MACD: ${a.macdWhy} Indicators are derived from price, so they can never tell you anything price has not already said — they just say it more consistently than the eye does.`],
-    ["The bullish possibility", `${scen.bullish.condition[0]} Confirmation would be: ${scen.bullish.confirmation[0].toLowerCase()} ${scen.bullish.targets[0] ? `The first area above is ${scen.bullish.targets[0].v}.` : "No area above could be mapped, which is itself a reason for caution."} This case currently scores ${led.bull} out of 8.`],
-    ["The bearish possibility", `${scen.bearish.condition[0]} Confirmation would be: ${scen.bearish.confirmation[0].toLowerCase()} ${scen.bearish.targets[0] ? `The first area below is ${scen.bearish.targets[0].v}.` : "No area below could be mapped."} This case currently scores ${led.bear} out of 8.`],
+    ["The bullish possibility", `${scen.bullish.condition[0]} Confirmation would be: ${scen.bullish.confirmation[0].toLowerCase()} ${scen.bullish.targets[0] ? `The first area above is ${scen.bullish.targets[0].v}.` : "No area above could be mapped, which is itself a reason for caution."} This case currently scores ${led.bull} out of ${led.reachable}.`],
+    ["The bearish possibility", `${scen.bearish.condition[0]} Confirmation would be: ${scen.bearish.confirmation[0].toLowerCase()} ${scen.bearish.targets[0] ? `The first area below is ${scen.bearish.targets[0].v}.` : "No area below could be mapped."} This case currently scores ${led.bear} out of ${led.reachable}.`],
     ["What would invalidate each", `Bullish case: ${scen.bullish.invalidation} Bearish case: ${scen.bearish.invalidation} Deciding this before entering is the single habit that separates a plan from a hope — afterwards, every adverse candle becomes an argument for moving the line.`],
     ["What a beginner should take from this chart", `${scen.noTrade.active ? "The most useful lesson right now is that this chart does not offer a readable setup, and the correct response to that is nothing. " : ""}The order of reading matters: trend, then structure, then level, then confluence, then scenario, then confirmation, then invalidation, then risk. Most losing decisions come from starting at the end — seeing an indicator, deciding a direction, and looking for evidence afterwards.${source === "illustrative" ? " Remember that this particular series is illustrative sample data, so treat this as a reading exercise rather than a market view." : ""}`],
   ];
